@@ -4,7 +4,7 @@ import { convex } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth/minimal";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
-import { env, query } from "./_generated/server";
+import { env } from "./_generated/server";
 import authConfig from "./auth.config";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
@@ -26,15 +26,6 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     plugins: [convex({ authConfig })],
   });
 };
-
-export const { getAuthUser } = authComponent.clientApi();
-
-export const getCurrentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    return await authComponent.getAuthUser(ctx);
-  },
-});
 
 async function sendVerificationEmail({ user, url }: { user: { email: string }; url: string }) {
   const resendApiKey = env.RESEND_API_KEY;

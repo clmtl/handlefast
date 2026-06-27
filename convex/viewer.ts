@@ -21,22 +21,19 @@ export const me = query({
     const memberships = await ctx.db
       .query("memberships")
       .withIndex("by_profileId", (q) => q.eq("profileId", profile._id))
-      .take(50);
+      .take(20);
 
     const organizations = (
       await Promise.all(memberships.map((membership) => ctx.db.get(membership.organizationId)))
     ).filter((organization) => organization !== null);
 
-    const shops = (
-      await Promise.all(
-        organizations.map((organization) =>
-          ctx.db
-            .query("shops")
-            .withIndex("by_organizationId", (q) => q.eq("organizationId", organization._id))
-            .take(50),
-        ),
-      )
-    ).flat();
+    const activeOrganization = organizations[0];
+    const shops = activeOrganization
+      ? await ctx.db
+          .query("shops")
+          .withIndex("by_organizationId", (q) => q.eq("organizationId", activeOrganization._id))
+          .take(20)
+      : [];
 
     const shopSettings = (
       await Promise.all(

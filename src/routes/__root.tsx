@@ -11,7 +11,7 @@ import {
   useRouteContext,
 } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 import { getToken } from "@/lib/auth-server";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -20,6 +20,11 @@ import appCss from "@/styles/app.css?url";
 const getAuth = createServerFn({ method: "GET" }).handler(async () => {
   return await getToken();
 });
+
+type ConvexProviderAuthClient = ComponentProps<typeof ConvexBetterAuthProvider>["authClient"];
+
+// @ts-expect-error @convex-dev/better-auth's AuthClient type resolves useSession().data to never with the Convex plugin, while createAuthClient returns the runtime shape consumed by the provider.
+const convexProviderAuthClient: ConvexProviderAuthClient = authClient;
 
 export const Route = createRootRouteWithContext<{
   convexQueryClient: ConvexQueryClient;
@@ -59,7 +64,7 @@ function RootComponent() {
 
   return (
     <ConvexBetterAuthProvider
-      authClient={authClient}
+      authClient={convexProviderAuthClient}
       client={context.convexQueryClient.convexClient}
       initialToken={context.token}
     >
