@@ -9,10 +9,12 @@ export function getRouter() {
   const convexUrl = import.meta.env.VITE_CONVEX_URL;
 
   if (!convexUrl) {
-    console.error("Missing VITE_CONVEX_URL. Run `npm run convex:dev` to link a Convex deployment.");
+    throw new Error(
+      "Missing VITE_CONVEX_URL. Run `npm run convex:dev` to link a Convex deployment.",
+    );
   }
 
-  const convexQueryClient = new ConvexQueryClient(convexUrl as string);
+  const convexQueryClient = new ConvexQueryClient(convexUrl);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {

@@ -217,7 +217,7 @@ function Home() {
             {submittedEmail
               ? m.form_success({ email: submittedEmail })
               : m.form_hint({
-                  count: recentPreferences.data?.length ?? 0,
+                  count: recentPreferences.data?.count ?? 0,
                 })}
           </p>
         </div>

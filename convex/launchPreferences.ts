@@ -15,7 +15,6 @@ export const save = mutation({
 
     if (existingPreference) {
       await ctx.db.patch(existingPreference._id, {
-        createdAt: now,
         source: args.source ?? existingPreference.source,
       });
 
@@ -37,10 +36,14 @@ export const recent = query({
   handler: async (ctx, args) => {
     const limit = Math.min(args.limit ?? 5, 20);
 
-    return await ctx.db
+    const recentPreferences = await ctx.db
       .query("launchPreferences")
       .withIndex("by_createdAt")
       .order("desc")
       .take(limit);
+
+    return {
+      count: recentPreferences.length,
+    };
   },
 });

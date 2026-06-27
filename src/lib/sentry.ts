@@ -10,6 +10,16 @@ export function initClientSentry() {
   Sentry.init({
     dsn,
     sendDefaultPii: false,
-    tracesSampleRate: 1.0,
+    tracesSampleRate: getClientTraceSampleRate(),
   });
+}
+
+function getClientTraceSampleRate() {
+  const configuredRate = Number(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE);
+
+  if (Number.isFinite(configuredRate) && configuredRate >= 0 && configuredRate <= 1) {
+    return configuredRate;
+  }
+
+  return import.meta.env.PROD ? 0.1 : 1.0;
 }
