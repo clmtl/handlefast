@@ -1,0 +1,12 @@
+- [] Authentification avec better auth
+- [] Lorsque l'adresse email de ma boutique reçois un email, cet email est reçu par HandleFast
+- [] HandleFast garde uniquement les emails envoyés par des clients et à destination du SAV
+- [] HandleFast catégorie les emails par type puis leurs mets une importance en fonction du contenu
+- [] HandleFast répond automatiquement aux emails de certaines catégories et importances. (configurable par l'utilisateur)
+- [] Lorsque HandleFast n'a pas le droit de répondre à un email, il le résume, fait une proposition de solution ou réponse et émet une alerte pour que l'utilisateur le traite
+- [] HandleFast utilise l'api https://t.17track.net/en#nums=YT2604300704809938 ainsi que l'api Shopify de la boutique pour avoir toutes les informations sur une commande
+- [] HandleFast a un cron qui regarde tous les jours l'avancement des commandes en cours et compare avec les délais de livraison de la boutique, si le délais est dépassé et que le client ne nous a pas encore contacté, il envoit un email au client en avance pour le rassurer
+- [] HandleFast a une interface avec les stocks de retours, dès qu'une commande est retournée, elle est ajoutée au stock. Lorsque une nouvelle commande est passé et que le produit de la commande correspond a un des produits du stocks, alors une alerte est émise a l'utilisateur pour qu'il contacte l'agent (ou automatisation pour le contacter) pour annuler la commande et envoyer celle du stock
+- [] HandleFast gérera aussi la comptabilité multi-boutiques et le tracking de rentabilité journalière (avec données de compte google ads)
+- [] HandleFast possèdera une fonctionnalité récupérant et listant les raisons des retours permettant au vendeur d'améliorer ses produits/services
+- [] Paiements avec stripe (tarification d'abonnement en fonction du nombre de boutiques)
