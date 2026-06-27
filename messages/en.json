@@ -1,0 +1,16 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "app_eyebrow": "Production starter",
+  "home_title": "HandleFast is ready for the edge.",
+  "home_subtitle": "TanStack Start handles the React app, Convex owns the backend and database, and Cloudflare Workers runs the front door.",
+  "mode_quiet": "Quiet mode",
+  "mode_fast": "Fast mode",
+  "stack_table_title": "Installed stack",
+  "form_title": "TanStack Form check",
+  "email_label": "Launch email",
+  "email_validation_error": "Enter a valid email address.",
+  "form_submit": "Save preference",
+  "form_submitting": "Saving...",
+  "form_hint": "Convex is live; {count} recent launch preference(s) are loaded through TanStack Query.",
+  "form_success": "Saved {email} to Convex."
+}
