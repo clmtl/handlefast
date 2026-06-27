@@ -10,8 +10,9 @@ export type AppCtx = QueryCtx | MutationCtx;
 
 export type AuthUser = {
   _id: string;
-  email?: string | null;
-  name?: string | null;
+  email: string;
+  emailVerified: boolean;
+  name: string;
   image?: string | null;
 };
 
@@ -23,11 +24,17 @@ export type AuthContext = {
 const managementRoles = new Set<Role>(["owner", "admin"]);
 
 export async function requireAuthContext(ctx: AppCtx): Promise<AuthContext> {
-  const authUser = (await authComponent.getAuthUser(ctx)) as AuthUser;
-  const identity = await ctx.auth.getUserIdentity();
+  const [authUser, identity] = await Promise.all([
+    authComponent.safeGetAuthUser(ctx),
+    ctx.auth.getUserIdentity(),
+  ]);
 
-  if (!identity) {
+  if (!identity || !authUser) {
     throw new ConvexError("Unauthenticated");
+  }
+
+  if (!authUser.emailVerified) {
+    throw new ConvexError("EmailVerificationRequired");
   }
 
   return {

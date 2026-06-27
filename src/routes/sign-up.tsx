@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { UserPlus } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { MailCheck, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { AuthPage, FieldError } from "@/components/auth-layout";
 import { authClient } from "@/lib/auth-client";
@@ -9,12 +9,32 @@ export const Route = createFileRoute("/sign-up")({
 });
 
 function SignUp() {
-  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerificationSent, setIsVerificationSent] = useState(false);
+
+  if (isVerificationSent) {
+    return (
+      <AuthPage
+        eyebrow="Verify your email"
+        subtitle="Open the verification link sent to your inbox, then sign in to continue onboarding."
+        title="Check your inbox to finish."
+      >
+        <div className="grid gap-5 text-center">
+          <MailCheck className="mx-auto size-10 text-primary" aria-hidden="true" />
+          <Link
+            className="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+            to="/sign-in"
+          >
+            Back to sign in
+          </Link>
+        </div>
+      </AuthPage>
+    );
+  }
 
   return (
     <AuthPage
@@ -100,6 +120,7 @@ function SignUp() {
     setIsSubmitting(true);
 
     const result = await authClient.signUp.email({
+      callbackURL: "/onboarding",
       email,
       name: name.trim() || email,
       password,
@@ -112,6 +133,6 @@ function SignUp() {
       return;
     }
 
-    await navigate({ to: "/onboarding" });
+    setIsVerificationSent(true);
   }
 }

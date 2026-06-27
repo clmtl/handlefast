@@ -17,7 +17,11 @@ function createTestBackend() {
   return t;
 }
 
-async function createAuthenticatedClient(t: ReturnType<typeof createTestBackend>, seed: string) {
+async function createAuthenticatedClient(
+  t: ReturnType<typeof createTestBackend>,
+  seed: string,
+  options: { emailVerified?: boolean } = {},
+) {
   const now = Date.now();
   const user = (await t.mutation(components.betterAuth.adapter.create, {
     input: {
@@ -25,7 +29,7 @@ async function createAuthenticatedClient(t: ReturnType<typeof createTestBackend>
       data: {
         name: `User ${seed}`,
         email: `${seed}@example.com`,
-        emailVerified: true,
+        emailVerified: options.emailVerified ?? true,
         createdAt: now,
         updatedAt: now,
       },
@@ -142,6 +146,43 @@ describe("auth and SaaS foundation", () => {
     await expect(t.query(api.organizations.list)).rejects.toThrow("Unauthenticated");
   });
 
+  test("rejects sessions whose auth user record is missing", async () => {
+    const t = createTestBackend();
+    const now = Date.now();
+    const session = (await t.mutation(components.betterAuth.adapter.create, {
+      input: {
+        model: "session",
+        data: {
+          token: "session-missing-user",
+          userId: "missing-user",
+          expiresAt: now + 60 * 60 * 1000,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+    })) as { _id: string };
+    const client = t.withIdentity({
+      issuer,
+      subject: "missing-user",
+      tokenIdentifier: `${issuer}|missing-user`,
+      sessionId: session._id,
+    } as Partial<UserIdentity> & { sessionId: string });
+
+    await expect(client.query(api.viewer.me)).rejects.toThrow("Unauthenticated");
+  });
+
+  test("rejects unverified email sessions before trusting profile data", async () => {
+    const t = createTestBackend();
+    const auth = await createAuthenticatedClient(t, "unverified", {
+      emailVerified: false,
+    });
+
+    await expect(auth.client.query(api.viewer.me)).rejects.toThrow("EmailVerificationRequired");
+    await expect(auth.client.mutation(api.onboarding.bootstrap, {})).rejects.toThrow(
+      "EmailVerificationRequired",
+    );
+  });
+
   test("returns an authenticated viewer state before onboarding is complete", async () => {
     const t = createTestBackend();
     const auth = await createAuthenticatedClient(t, "pre-onboarding");
@@ -154,6 +195,8 @@ describe("auth and SaaS foundation", () => {
     expect(viewer.shops).toEqual([]);
     expect(viewer.shopSettings).toEqual([]);
     expect(viewer.hasCompletedOnboarding).toBe(false);
+    expect(viewer).not.toHaveProperty("authUser");
+    expect(viewer).not.toHaveProperty("tokenIdentifier");
   });
 
   test("bootstraps the first profile, organization, owner membership, shop, and settings", async () => {
@@ -168,6 +211,7 @@ describe("auth and SaaS foundation", () => {
 
     expect(result.created).toBe(true);
     expect(viewer.profile?.authUserId).toBe(auth.authUserId);
+    expect(viewer.organizations[0]?.slug).toBe("owner-company");
     expect(viewer.organizations).toHaveLength(1);
     expect(viewer.memberships).toMatchObject([{ role: "owner" }]);
     expect(viewer.shops).toMatchObject([{ name: "Owner Shop", platform: "manual" }]);
@@ -267,6 +311,19 @@ describe("auth and SaaS foundation", () => {
       locale: "fr",
       timezone: "Europe/Paris",
     });
+
+    await owner.client.mutation(api.shops.updateSettings, {
+      escalationEmail: "",
+      shopId: owner.shopId,
+      supportEmail: "   ",
+    });
+
+    const cleared = await owner.client.query(api.shops.getWithSettings, {
+      shopId: owner.shopId,
+    });
+
+    expect(cleared.shop.supportEmail).toBeUndefined();
+    expect(cleared.settings?.escalationEmail).toBeUndefined();
   });
 
   test("denies shop settings updates to non-members", async () => {

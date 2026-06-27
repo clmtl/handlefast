@@ -57,11 +57,7 @@ export const bootstrap = mutation({
     }
 
     const organizationName = args.organizationName?.trim() || `${profileName}'s organization`;
-    const organizationSlug = await getAvailableOrganizationSlug(
-      ctx,
-      organizationName,
-      authUser._id,
-    );
+    const organizationSlug = await getAvailableOrganizationSlug(ctx, organizationName);
     const organizationId = await ctx.db.insert("organizations", {
       name: organizationName,
       slug: organizationSlug,
@@ -107,12 +103,8 @@ export const bootstrap = mutation({
   },
 });
 
-async function getAvailableOrganizationSlug(
-  ctx: MutationCtx,
-  organizationName: string,
-  authUserId: string,
-) {
-  const baseSlug = `${slugify(organizationName)}-${slugify(authUserId).slice(0, 8)}`;
+async function getAvailableOrganizationSlug(ctx: MutationCtx, organizationName: string) {
+  const baseSlug = slugify(organizationName);
 
   for (let index = 0; index < 20; index += 1) {
     const candidate = index === 0 ? baseSlug : `${baseSlug}-${index + 1}`;

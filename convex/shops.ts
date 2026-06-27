@@ -63,10 +63,8 @@ export const updateSettings = mutation({
     }
 
     if (args.supportEmail !== undefined) {
-      const supportEmail = args.supportEmail.trim();
-
       await ctx.db.patch(shop._id, {
-        ...(supportEmail ? { supportEmail } : {}),
+        supportEmail: normalizeOptionalEmail(args.supportEmail),
         updatedAt: now,
       });
     }
@@ -79,10 +77,9 @@ export const updateSettings = mutation({
     };
 
     if (args.escalationEmail !== undefined) {
-      const escalationEmail = args.escalationEmail.trim();
       await ctx.db.patch(settings._id, {
         ...settingsPatch,
-        ...(escalationEmail ? { escalationEmail } : {}),
+        escalationEmail: normalizeOptionalEmail(args.escalationEmail),
       });
     } else {
       await ctx.db.patch(settings._id, settingsPatch);
@@ -91,3 +88,8 @@ export const updateSettings = mutation({
     return settings._id;
   },
 });
+
+function normalizeOptionalEmail(value: string) {
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}

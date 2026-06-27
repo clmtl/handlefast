@@ -4,13 +4,11 @@ import { getProfileByAuthUserId, requireAuthContext, requireProfile } from "./li
 export const me = query({
   args: {},
   handler: async (ctx) => {
-    const { authUser, tokenIdentifier } = await requireAuthContext(ctx);
+    const { authUser } = await requireAuthContext(ctx);
     const profile = await getProfileByAuthUserId(ctx, authUser._id);
 
     if (!profile) {
       return {
-        authUser,
-        tokenIdentifier,
         profile: null,
         organizations: [],
         memberships: [],
@@ -52,8 +50,6 @@ export const me = query({
     ).filter((settings) => settings !== null);
 
     return {
-      authUser,
-      tokenIdentifier,
       profile,
       organizations,
       memberships,
