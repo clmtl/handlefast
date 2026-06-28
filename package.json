@@ -15,6 +15,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check .",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "ui:add": "shadcn add"
   },
@@ -50,6 +51,7 @@
     "@biomejs/biome": "^2.5.1",
     "@cloudflare/vite-plugin": "^1.42.3",
     "@cloudflare/workers-types": "^4.20260627.1",
+    "@edge-runtime/vm": "^5.0.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/babel__core": "^7.20.5",
@@ -58,10 +60,12 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "babel-plugin-react-compiler": "^1.0.0",
+    "convex-test": "^0.0.54",
     "shadcn": "^4.12.0",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
+    "vitest": "^4.1.9",
     "wrangler": "^4.105.0"
   }
 }
