@@ -14,6 +14,7 @@ export const me = query({
         memberships: [],
         shops: [],
         shopSettings: [],
+        inboundEmailRoutes: [],
         hasCompletedOnboarding: false,
       };
     }
@@ -46,12 +47,28 @@ export const me = query({
       )
     ).filter((settings) => settings !== null);
 
+    const inboundEmailRoutes = (
+      await Promise.all(
+        shops.map((shop) =>
+          ctx.db
+            .query("inboundEmailRoutes")
+            .withIndex("by_shopId_and_status", (q) =>
+              q.eq("shopId", shop._id).eq("status", "active"),
+            )
+            .take(1),
+        ),
+      )
+    )
+      .flat()
+      .filter((route) => route !== null);
+
     return {
       profile,
       organizations,
       memberships,
       shops,
       shopSettings,
+      inboundEmailRoutes,
       hasCompletedOnboarding: memberships.length > 0,
     };
   },

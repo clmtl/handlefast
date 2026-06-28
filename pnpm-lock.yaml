@@ -59,6 +59,9 @@ importers:
       lucide-react:
         specifier: ^1.21.0
         version: 1.21.0(react@19.2.7)
+      postal-mime:
+        specifier: ^2.7.5
+        version: 2.7.5
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -2852,6 +2855,9 @@ packages:
   pkg-up@3.1.0:
     resolution: {integrity: sha512-nDywThFk1i4BQK4twPQ6TA4RT8bDY96yeuCVBWL3ePARCiEKDRSrNGbFIgUJpLp+XeIR65v8ra7WuJOFUBtkMA==}
     engines: {node: '>=8'}
+
+  postal-mime@2.7.5:
+    resolution: {integrity: sha512-GNEXKvWFQnbgO5NlrGzVa0FmWzBZ24PersAWErttSg1Hjpf0ATxTwS5DOMGaOpTG6bUh5cTr7xi0jAD942wCJA==}
 
   postcss-selector-parser@7.1.4:
     resolution: {integrity: sha512-HeP7D2wyhkR+XaK6v4W8oRF62Dsz4flyuczALJp61GckGm42u1saSSJ/0auvcBqxs3jMRFEcPK34At/0JBKdOg==}
@@ -5858,6 +5864,8 @@ snapshots:
   pkg-up@3.1.0:
     dependencies:
       find-up: 3.0.0
+
+  postal-mime@2.7.5: {}
 
   postcss-selector-parser@7.1.4:
     dependencies:

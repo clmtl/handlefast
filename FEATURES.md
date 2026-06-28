@@ -1,5 +1,5 @@
 - [x] Authentification avec better auth
-- [] Lorsque l'adresse email de ma boutique reçois un email, cet email est reçu par HandleFast
+- [x] Lorsque l'adresse email de ma boutique reçois un email, cet email est reçu par HandleFast
 - [] HandleFast garde uniquement les emails envoyés par des clients et à destination du SAV
 - [] HandleFast utilise l'api https://t.17track.net/en#nums=YT2604300704809938 ainsi que l'api Shopify de la boutique pour avoir toutes les informations sur une commande
 - [] HandleFast catégorie les emails par type puis leurs mets une importance en fonction du contenu

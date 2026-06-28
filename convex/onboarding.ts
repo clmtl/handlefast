@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import { mutation } from "./_generated/server";
 import { getProfileByAuthUserId, requireAuthContext } from "./lib/authorization";
+import { ensureInboundEmailRouteForShop } from "./lib/inboundEmailRoutes";
 import { slugify } from "./lib/slugs";
 
 export const bootstrap = mutation({
@@ -49,9 +50,21 @@ export const bootstrap = mutation({
       .take(1);
 
     if (existingMembership.length > 0) {
+      const existingShop = await ctx.db
+        .query("shops")
+        .withIndex("by_organizationId", (q) =>
+          q.eq("organizationId", existingMembership[0].organizationId),
+        )
+        .take(1);
+      const inboundEmailRoute = existingShop[0]
+        ? await ensureInboundEmailRouteForShop(ctx, existingShop[0], now)
+        : null;
+
       return {
         profileId: profile._id,
         organizationId: existingMembership[0].organizationId,
+        ...(existingShop[0] ? { shopId: existingShop[0]._id } : {}),
+        ...(inboundEmailRoute ? { inboundEmailRouteId: inboundEmailRoute._id } : {}),
         created: false,
       };
     }
@@ -94,10 +107,19 @@ export const bootstrap = mutation({
       updatedAt: now,
     });
 
+    const shop = await ctx.db.get(shopId);
+
+    if (!shop) {
+      throw new Error("Failed to create shop");
+    }
+
+    const inboundEmailRoute = await ensureInboundEmailRouteForShop(ctx, shop, now);
+
     return {
       profileId: profile._id,
       organizationId,
       shopId,
+      inboundEmailRouteId: inboundEmailRoute._id,
       created: true,
     };
   },
