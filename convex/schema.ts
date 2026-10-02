@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { receiptFields } from "./lib/emailReceiptValidators";
 
 export const roleValidator = v.union(
   v.literal("owner"),
@@ -43,6 +44,27 @@ const inboundEmailHeaderValidator = v.object({
 });
 
 export default defineSchema({
+  emailReceipts: defineTable(receiptFields)
+    .index("by_key", ["key"])
+    .index("by_sha256_and_status", ["sha256", "status"])
+    .index("by_rawStorageId", ["rawStorageId"])
+    .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
+    .index("by_shopId_and_receivedAt", ["shopId", "receivedAt"])
+    .index("by_expiresAt", ["expiresAt"]),
+  emailMaintenance: defineTable({ key: v.string(), cursor: v.union(v.string(), v.null()) }).index(
+    "by_key",
+    ["key"],
+  ),
+  emailConnectionTests: defineTable({
+    shopId: v.id("shops"),
+    routeId: v.id("inboundEmailRoutes"),
+    supportEmail: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    verifiedAt: v.optional(v.number()),
+  })
+    .index("by_routeId", ["routeId"])
+    .index("by_expiresAt", ["expiresAt"]),
   launchPreferences: defineTable({
     email: v.string(),
     source: v.string(),
@@ -120,6 +142,9 @@ export default defineSchema({
     shopId: v.id("shops"),
     address: v.string(),
     localPart: v.string(),
+    lastReceivedAt: v.optional(v.number()),
+    verifiedAt: v.optional(v.number()),
+    verifiedSupportEmail: v.optional(v.string()),
     domain: v.string(),
     status: inboundEmailRouteStatusValidator,
     createdAt: v.number(),
@@ -142,6 +167,7 @@ export default defineSchema({
     messageId: v.optional(v.string()),
     receivedAt: v.number(),
     rawSize: v.number(),
+    receiptId: v.optional(v.id("emailReceipts")),
     status: inboundEmailDeliveryStatusValidator,
     error: v.optional(v.string()),
     createdAt: v.number(),
@@ -173,6 +199,8 @@ export default defineSchema({
     conversationId: v.id("supportConversations"),
     routeId: v.id("inboundEmailRoutes"),
     deliveryId: v.id("inboundEmailDeliveries"),
+    receiptId: v.optional(v.id("emailReceipts")),
+    expiresAt: v.optional(v.number()),
     direction: supportMessageDirectionValidator,
     from: emailIdentityValidator,
     to: v.array(emailIdentityValidator),
@@ -196,6 +224,8 @@ export default defineSchema({
     .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
     .index("by_shopId_and_createdAt", ["shopId", "createdAt"])
     .index("by_deliveryId", ["deliveryId"])
+    .index("by_receiptId", ["receiptId"])
+    .index("by_expiresAt", ["expiresAt"])
     .index("by_messageId", ["messageId"])
     .index("by_shopId_and_messageId", ["shopId", "messageId"]),
 

@@ -13,7 +13,11 @@ http.route({
   path: "/webhooks/cloudflare/email-routing",
   method: "POST",
   handler: httpAction(async (ctx, req) => {
+    if (Number(req.headers.get("content-length")) > 16_384)
+      return jsonResponse({ error: "PayloadTooLarge" }, 413);
     const body = await req.text();
+    if (new TextEncoder().encode(body).byteLength > 16_384)
+      return jsonResponse({ error: "PayloadTooLarge" }, 413);
     const verification = await verifyWebhookSignature(
       req.headers,
       body,
@@ -25,7 +29,7 @@ http.route({
       return jsonResponse({ error: verification.reason }, status);
     }
 
-    let payload: FunctionArgs<typeof internal.inboundEmails.ingestFromWorker>;
+    let payload: unknown;
 
     try {
       payload = JSON.parse(body);
@@ -33,9 +37,28 @@ http.route({
       return jsonResponse({ error: "InvalidJsonPayload" }, 400);
     }
 
-    const result = await ctx.runMutation(internal.inboundEmails.ingestFromWorker, payload);
-
-    return jsonResponse(result, 202);
+    if (!payload || typeof payload !== "object" || !("operation" in payload))
+      return jsonResponse({ error: "InvalidOperation" }, 400);
+    const { operation, ...args } = payload as Record<string, unknown>;
+    if (operation === "reserve") {
+      if (!isReservation(args)) return jsonResponse({ error: "InvalidReservation" }, 400);
+      const result = await ctx.runMutation(internal.emailReceipts.reserve, args);
+      return jsonResponse(result, 200);
+    }
+    if (operation === "complete") {
+      if (
+        typeof args.receiptId !== "string" ||
+        typeof args.storageId !== "string" ||
+        Object.keys(args).length !== 2
+      )
+        return jsonResponse({ error: "InvalidCompletion" }, 400);
+      const result = await ctx.runMutation(
+        internal.emailReceipts.completeUpload,
+        args as FunctionArgs<typeof internal.emailReceipts.completeUpload>,
+      );
+      return jsonResponse(result, 202);
+    }
+    return jsonResponse({ error: "InvalidOperation" }, 400);
   }),
 });
 
@@ -49,3 +72,15 @@ function jsonResponse(body: unknown, status: number) {
 }
 
 export default http;
+
+function isReservation(
+  value: Record<string, unknown>,
+): value is FunctionArgs<typeof internal.emailReceipts.reserve> {
+  return (
+    Object.keys(value).length === 4 &&
+    typeof value.envelopeFrom === "string" &&
+    typeof value.envelopeTo === "string" &&
+    typeof value.sha256 === "string" &&
+    typeof value.rawSize === "number"
+  );
+}

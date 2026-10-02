@@ -1,11 +1,12 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
+import { emailExpiresAt } from "./lib/emailPolicy";
 import { normalizeEmailAddress } from "./lib/inboundEmailRoutes";
 
-const maxBodyLength = 120_000;
-const maxHeaderCount = 80;
-const maxHeaderValueLength = 4_000;
+const maxBodyLength = 12_000;
+const maxHeaderCount = 40;
+const maxHeaderValueLength = 1_000;
 const maxReferenceCount = 20;
 const maxAddressCount = 30;
 
@@ -49,6 +50,8 @@ export const ingestFromWorker = internalMutation({
     receivedAt: v.number(),
     sentAt: v.optional(v.number()),
     rawSize: v.number(),
+    receiptId: v.optional(v.id("emailReceipts")),
+    processingAttempt: v.optional(v.number()),
   },
   returns: v.union(
     v.object({ status: v.literal("duplicate"), deliveryId: v.id("inboundEmailDeliveries") }),
@@ -63,6 +66,18 @@ export const ingestFromWorker = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const deliveryKey = args.deliveryKey.trim();
+    const receipt = args.receiptId ? await ctx.db.get(args.receiptId) : null;
+    if (
+      args.receiptId &&
+      (!receipt ||
+        receipt.expiresAt <= now ||
+        receipt.status !== "processing" ||
+        receipt.attempts !== args.processingAttempt ||
+        receipt.key !== deliveryKey)
+    ) {
+      throw new ConvexError("StaleEmailProcessing");
+    }
+    const receivedAt = receipt?.receivedAt ?? now;
 
     const existingDelivery = await ctx.db
       .query("inboundEmailDeliveries")
@@ -84,6 +99,13 @@ export const ingestFromWorker = internalMutation({
 
     const shop = route ? await ctx.db.get(route.shopId) : null;
     if (route?.status !== "active" || !shop || shop.status === "disabled") {
+      if (receipt) {
+        await ctx.db.patch(receipt._id, {
+          status: "paused",
+          error: "ReceptionDisabled",
+          updatedAt: now,
+        });
+      }
       if (existingDelivery) {
         return { status: "unmatched" as const, deliveryId: existingDelivery._id };
       }
@@ -94,7 +116,7 @@ export const ingestFromWorker = internalMutation({
         envelopeFrom: normalizeEmailAddress(args.envelopeFrom),
         envelopeTo,
         ...(messageId ? { messageId } : {}),
-        receivedAt: now,
+        receivedAt,
         rawSize: args.rawSize,
         status: "unmatched",
         error: "InboundEmailRouteNotFound",
@@ -110,7 +132,7 @@ export const ingestFromWorker = internalMutation({
 
     const normalizedFrom = normalizeEmailIdentity(args.from, args.envelopeFrom);
     const customerEmail = normalizedFrom.address;
-    const subject = normalizeOptionalString(args.subject);
+    const subject = truncateOptional(args.subject, 1_000);
     const messageId = normalizeOptionalString(args.messageId);
     const inReplyTo = normalizeOptionalString(args.inReplyTo);
     const references = normalizeReferences(args.references);
@@ -127,12 +149,13 @@ export const ingestFromWorker = internalMutation({
       organizationId: route.organizationId,
       shopId: route.shopId,
       routeId: route._id,
+      ...(receipt ? { receiptId: receipt._id } : {}),
       provider: args.provider,
       deliveryKey,
       envelopeFrom: normalizeEmailAddress(args.envelopeFrom),
       envelopeTo,
       ...(messageId ? { messageId } : {}),
-      receivedAt: now,
+      receivedAt,
       rawSize: args.rawSize,
       status: "received" as const,
       createdAt: now,
@@ -158,6 +181,8 @@ export const ingestFromWorker = internalMutation({
       conversationId,
       routeId: route._id,
       deliveryId,
+      ...(receipt ? { receiptId: receipt._id } : {}),
+      expiresAt: receipt?.expiresAt ?? emailExpiresAt(receivedAt),
       direction: "inbound",
       from: normalizedFrom,
       to: normalizeEmailIdentities(args.to, args.envelopeTo),
@@ -171,7 +196,7 @@ export const ingestFromWorker = internalMutation({
       ...(messageId ? { messageId } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
       references,
-      receivedAt: now,
+      receivedAt,
       ...(args.sentAt !== undefined && Number.isFinite(args.sentAt) ? { sentAt: args.sentAt } : {}),
       rawSize: args.rawSize,
       attachmentCount: attachmentSummaries.length,
@@ -193,11 +218,38 @@ export const ingestFromWorker = internalMutation({
       });
     }
 
+    const conversation = await ctx.db.get(conversationId);
     await ctx.db.patch(conversationId, {
-      lastMessageAt: now,
+      lastMessageAt: Math.max(conversation?.lastMessageAt ?? 0, receivedAt),
       status: "open",
       updatedAt: now,
     });
+
+    if (receipt) {
+      await ctx.db.patch(receipt._id, { status: "processed", error: undefined, updatedAt: now });
+    }
+    await ctx.db.patch(route._id, {
+      lastReceivedAt: Math.max(route.lastReceivedAt ?? 0, receivedAt),
+      updatedAt: now,
+    });
+    const connectionTest = await ctx.db
+      .query("emailConnectionTests")
+      .withIndex("by_routeId", (q) => q.eq("routeId", route._id))
+      .order("desc")
+      .first();
+    if (
+      connectionTest &&
+      !connectionTest.verifiedAt &&
+      connectionTest.expiresAt > now &&
+      subject?.includes(String(connectionTest._id)) &&
+      args.to.some((to) => normalizeEmailAddress(to.address) === connectionTest.supportEmail)
+    ) {
+      await ctx.db.patch(connectionTest._id, { verifiedAt: now });
+      await ctx.db.patch(route._id, {
+        verifiedAt: now,
+        verifiedSupportEmail: connectionTest.supportEmail,
+      });
+    }
 
     return {
       status: "received" as const,
@@ -268,8 +320,9 @@ async function getConversationIdByReferences(
 }
 
 function normalizeEmailIdentity(value: { address: string; name?: string }, fallback = "") {
-  const address = normalizeEmailAddress(value.address || fallback) || "unknown@unknown.invalid";
-  const name = normalizeOptionalString(value.name);
+  const address =
+    normalizeEmailAddress(value.address || fallback).slice(0, 320) || "unknown@unknown.invalid";
+  const name = truncateOptional(value.name, 256);
   return {
     address,
     ...(name ? { name } : {}),
@@ -316,12 +369,12 @@ function normalizeAttachmentSummaries(
     contentId?: string;
   }>,
 ) {
-  return attachments.map((attachment) => {
-    const filename = normalizeOptionalString(attachment.filename);
-    const contentId = normalizeOptionalString(attachment.contentId);
+  return attachments.slice(0, 100).map((attachment) => {
+    const filename = truncateOptional(attachment.filename, 512);
+    const contentId = truncateOptional(attachment.contentId, 512);
     return {
       ...(filename ? { filename } : {}),
-      contentType: attachment.contentType.trim() || "application/octet-stream",
+      contentType: attachment.contentType.trim().slice(0, 256) || "application/octet-stream",
       size: Math.max(0, Math.trunc(attachment.size)),
       ...(attachment.disposition ? { disposition: attachment.disposition } : {}),
       ...(contentId ? { contentId } : {}),

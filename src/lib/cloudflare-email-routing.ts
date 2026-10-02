@@ -1,6 +1,6 @@
 import PostalMime, { type Address, type Attachment } from "postal-mime";
 
-export const maxInboundEmailRawBytes = 5 * 1024 * 1024;
+export const maxInboundEmailRawBytes = 25 * 1024 * 1024;
 
 export type CloudflareEmailRoutingMessage = {
   from: string;
@@ -98,7 +98,7 @@ export async function buildCloudflareEmailRoutingPayload(
     ...(messageId ? { messageId: normalizeMessageId(messageId) } : {}),
     ...(inReplyTo ? { inReplyTo: normalizeMessageId(inReplyTo) } : {}),
     references: parseReferences(parsed.references),
-    attachments: parsed.attachments.map(normalizeAttachment),
+    attachments: parsed.attachments.slice(0, 100).map(normalizeAttachment),
     receivedAt,
     ...(Number.isFinite(sentAt) ? { sentAt } : {}),
     rawSize: message.rawSize,

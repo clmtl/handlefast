@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
-import { Copy, Inbox, LogOut, Settings, ShieldCheck, Store } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useQuery } from "convex/react";
+import { Inbox, LogOut, ShieldCheck, Store } from "lucide-react";
+import { useEffect } from "react";
 import { LoadingScreen, RequireAuth } from "@/components/auth-layout";
+import { InboundEmailSettings } from "@/components/inbound-email-settings";
 import { authClient } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 
@@ -21,11 +22,6 @@ function DashboardRoute() {
 function Dashboard() {
   const navigate = useNavigate();
   const viewer = useQuery(api.viewer.me);
-  const ensureInboundEmailRoute = useMutation(api.inboundEmailRoutes.ensureForShop);
-  const [hasRequestedInboundRoute, setHasRequestedInboundRoute] = useState(false);
-  const [copiedInboundAddress, setCopiedInboundAddress] = useState(false);
-  const [inboundRouteError, setInboundRouteError] = useState("");
-  const [copyError, setCopyError] = useState("");
 
   useEffect(() => {
     if (viewer && !viewer.hasCompletedOnboarding) {
@@ -36,40 +32,9 @@ function Dashboard() {
   const organization = viewer?.organizations[0];
   const membership = viewer?.memberships[0];
   const shop = viewer?.shops[0];
-  const settings = viewer?.shopSettings[0];
   const inboundEmailRoute = shop
     ? viewer?.inboundEmailRoutes.find((route) => route.shopId === shop._id)
     : undefined;
-  const canManageWorkspace = membership?.role === "owner" || membership?.role === "admin";
-
-  useEffect(() => {
-    if (
-      !shop ||
-      shop.status === "disabled" ||
-      inboundEmailRoute ||
-      !canManageWorkspace ||
-      hasRequestedInboundRoute
-    ) {
-      return;
-    }
-
-    setHasRequestedInboundRoute(true);
-    void ensureInboundEmailRoute({ shopId: shop._id })
-      .then((route) => {
-        if (!route)
-          setInboundRouteError("Email reception is paused. Contact your workspace administrator.");
-      })
-      .catch(() =>
-        setInboundRouteError("Unable to create your receiving address. Please try again."),
-      );
-  }, [
-    canManageWorkspace,
-    ensureInboundEmailRoute,
-    hasRequestedInboundRoute,
-    inboundEmailRoute,
-    shop,
-  ]);
-
   if (viewer === undefined || !viewer.hasCompletedOnboarding) {
     return <LoadingScreen label="Loading your workspace" />;
   }
@@ -104,106 +69,16 @@ function Dashboard() {
           value={
             shop?.status === "disabled"
               ? "Disabled"
-              : inboundRouteError
-                ? "Needs attention"
-                : inboundEmailRoute
-                  ? "Address created"
-                  : canManageWorkspace
-                    ? "Setting up"
-                    : "Not ready"
+              : inboundEmailRoute?.verifiedAt &&
+                  inboundEmailRoute.verifiedSupportEmail === shop?.supportEmail
+                ? "Forwarding verified"
+                : "Setup incomplete"
           }
         />
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-5 pb-10 md:px-8">
-        <div className="grid gap-5 md:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-lg border bg-card p-5">
-            <h1 className="text-2xl font-semibold tracking-normal">Inbound email routing</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Forward the shop support inbox to this HandleFast address so incoming customer emails
-              can be captured and attached to the workspace.
-            </p>
-
-            <div className="mt-5 grid gap-2">
-              <label className="text-sm font-medium" htmlFor="inboundEmailAddress">
-                HandleFast inbound address
-              </label>
-              <div className="flex min-h-11 items-center gap-2 rounded-md border bg-background px-3">
-                <code
-                  className="min-w-0 flex-1 truncate text-sm"
-                  id="inboundEmailAddress"
-                  title={inboundEmailRoute?.address}
-                >
-                  {inboundEmailRoute?.address ??
-                    (inboundRouteError || shop?.status === "disabled" || !canManageWorkspace
-                      ? "Address unavailable"
-                      : "Creating address")}
-                </code>
-                <button
-                  aria-label="Copy inbound address"
-                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                  disabled={!inboundEmailRoute?.address}
-                  onClick={() => {
-                    setCopyError("");
-                    void copyInboundAddress(
-                      inboundEmailRoute?.address,
-                      setCopiedInboundAddress,
-                    ).catch(() =>
-                      setCopyError("Copy failed. Select the address and copy it manually."),
-                    );
-                  }}
-                  title="Copy inbound address"
-                  type="button"
-                >
-                  <Copy className="size-4" aria-hidden="true" />
-                </button>
-              </div>
-              <div className="min-h-5 text-sm text-muted-foreground">
-                {copiedInboundAddress ? "Copied" : " "}
-              </div>
-              {copyError && (
-                <p role="alert" className="text-sm text-destructive">
-                  {copyError}
-                </p>
-              )}
-              {inboundRouteError && (
-                <div className="grid gap-2">
-                  <p role="alert" className="text-sm text-destructive">
-                    {inboundRouteError}
-                  </p>
-                  <button
-                    type="button"
-                    className="w-fit rounded-md border px-3 py-2 text-sm"
-                    onClick={() => {
-                      setInboundRouteError("");
-                      setHasRequestedInboundRoute(false);
-                    }}
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
-              {inboundEmailRoute && shop?.status !== "disabled" && (
-                <p className="text-sm text-muted-foreground">
-                  Your address has been created. Email forwarding still needs to be configured and
-                  tested.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border bg-card p-5">
-            <Settings className="mb-4 size-5 text-primary" aria-hidden="true" />
-            <div className="text-sm text-muted-foreground">Auto-replies</div>
-            <div className="mt-1 text-xl font-semibold">
-              {settings?.autoReplyEnabled ? "Enabled" : "Disabled"}
-            </div>
-            <div className="mt-4 text-sm leading-6 text-muted-foreground">
-              Automated replies stay disabled until classification and approval rules are
-              configured.
-            </div>
-          </div>
-        </div>
+        {shop && <InboundEmailSettings key={shop._id} shopId={shop._id} />}
       </section>
     </main>
   );
@@ -230,17 +105,4 @@ function Panel({
 async function signOut() {
   await authClient.signOut();
   window.location.assign("/sign-in");
-}
-
-async function copyInboundAddress(
-  address: string | undefined,
-  setCopiedInboundAddress: (copied: boolean) => void,
-) {
-  if (!address) {
-    return;
-  }
-
-  await navigator.clipboard.writeText(address);
-  setCopiedInboundAddress(true);
-  window.setTimeout(() => setCopiedInboundAddress(false), 1600);
 }
