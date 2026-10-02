@@ -40,6 +40,7 @@ export type CloudflareEmailRoutingPayload = {
     contentId?: string;
   }>;
   receivedAt: number;
+  sentAt?: number;
   rawSize: number;
 };
 
@@ -60,7 +61,8 @@ export async function buildCloudflareEmailRoutingPayload(
   const envelopeTo = normalizeEmailAddress(message.to);
   const messageId = normalizeOptionalString(parsed.messageId);
   const rawHash = await sha256Hex(rawBytes);
-  const receivedAt = getReceivedAt(parsed.date);
+  const receivedAt = Date.now();
+  const sentAt = parsed.date ? Date.parse(parsed.date) : Number.NaN;
   const text = normalizeOptionalString(parsed.text);
   const html = normalizeOptionalString(parsed.html);
   const subject = normalizeOptionalString(parsed.subject);
@@ -98,6 +100,7 @@ export async function buildCloudflareEmailRoutingPayload(
     references: parseReferences(parsed.references),
     attachments: parsed.attachments.map(normalizeAttachment),
     receivedAt,
+    ...(Number.isFinite(sentAt) ? { sentAt } : {}),
     rawSize: message.rawSize,
   };
 }
@@ -174,12 +177,7 @@ function parseReferences(value: string | undefined) {
 
   return Array.from(value.matchAll(/<[^>]+>|[^\s]+/g), (match) => normalizeMessageId(match[0]))
     .filter(Boolean)
-    .slice(0, 20);
-}
-
-function getReceivedAt(value: string | undefined) {
-  const timestamp = value ? Date.parse(value) : Number.NaN;
-  return Number.isFinite(timestamp) ? timestamp : Date.now();
+    .slice(-20);
 }
 
 function normalizeMessageId(value: string) {

@@ -18,6 +18,10 @@ export async function ensureInboundEmailRouteForShop(
   shop: Doc<"shops">,
   now = Date.now(),
 ) {
+  if (shop.status === "disabled") {
+    return null;
+  }
+
   const existingActiveRoute = await ctx.db
     .query("inboundEmailRoutes")
     .withIndex("by_shopId_and_status", (q) => q.eq("shopId", shop._id).eq("status", "active"))
@@ -25,6 +29,15 @@ export async function ensureInboundEmailRouteForShop(
 
   if (existingActiveRoute[0]) {
     return existingActiveRoute[0];
+  }
+
+  // Provision once. Disabling or rotating a route must not silently create another.
+  const previousRoute = await ctx.db
+    .query("inboundEmailRoutes")
+    .withIndex("by_shopId", (q) => q.eq("shopId", shop._id))
+    .first();
+  if (previousRoute) {
+    return null;
   }
 
   const domain = getInboundEmailDomain();

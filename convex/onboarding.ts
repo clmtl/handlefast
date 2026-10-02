@@ -10,6 +10,13 @@ export const bootstrap = mutation({
     organizationName: v.optional(v.string()),
     shopName: v.optional(v.string()),
   },
+  returns: v.object({
+    profileId: v.id("profiles"),
+    organizationId: v.id("organizations"),
+    shopId: v.optional(v.id("shops")),
+    inboundEmailRouteId: v.optional(v.id("inboundEmailRoutes")),
+    created: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const { authUser, tokenIdentifier } = await requireAuthContext(ctx);
     const now = Date.now();
@@ -57,7 +64,12 @@ export const bootstrap = mutation({
         )
         .take(1);
       const inboundEmailRoute = existingShop[0]
-        ? await ensureInboundEmailRouteForShop(ctx, existingShop[0], now)
+        ? await ctx.db
+            .query("inboundEmailRoutes")
+            .withIndex("by_shopId_and_status", (q) =>
+              q.eq("shopId", existingShop[0]._id).eq("status", "active"),
+            )
+            .first()
         : null;
 
       return {
@@ -114,6 +126,10 @@ export const bootstrap = mutation({
     }
 
     const inboundEmailRoute = await ensureInboundEmailRouteForShop(ctx, shop, now);
+
+    if (!inboundEmailRoute) {
+      throw new Error("Failed to create inbound email route");
+    }
 
     return {
       profileId: profile._id,

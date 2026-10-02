@@ -21,6 +21,7 @@ describe("Cloudflare email routing payload", () => {
       throw new Error("Expected Response body");
     }
 
+    const before = Date.now();
     const payload = await buildCloudflareEmailRoutingPayload({
       from: "customer@example.com",
       to: "hf_shop@in.handlefast.io",
@@ -40,6 +41,8 @@ describe("Cloudflare email routing payload", () => {
       subject: "Order help",
       text: "Hello HandleFast, where is my order?",
     });
-    expect(payload.receivedAt).toBe(Date.parse("2026-06-28T12:00:00.000Z"));
+    expect(payload.sentAt).toBe(Date.parse("2026-06-28T12:00:00.000Z"));
+    expect(payload.receivedAt).toBeGreaterThanOrEqual(before);
+    expect(payload.receivedAt).toBeLessThanOrEqual(Date.now());
   });
 });

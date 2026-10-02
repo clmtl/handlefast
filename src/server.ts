@@ -44,6 +44,18 @@ const workerHandler = {
         `Convex email ingestion failed: ${response.status} ${responseBody.slice(0, 200)}`,
       );
     }
+
+    const result: unknown = await response.json();
+    if (!result || typeof result !== "object" || !("status" in result)) {
+      throw new Error("Invalid Convex email ingestion response");
+    }
+    if (result.status === "unmatched") {
+      message.setReject("This HandleFast address is not accepting email.");
+      return;
+    }
+    if (result.status !== "received" && result.status !== "duplicate") {
+      throw new Error("Unexpected Convex email ingestion status");
+    }
   },
 } satisfies ExportedHandler<Env>;
 

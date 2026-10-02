@@ -145,7 +145,8 @@ describe("inbound email routing", () => {
         .take(10);
     });
 
-    expect(first._id).toBe(second._id);
+    expect(first).not.toBeNull();
+    expect(first?._id).toBe(second?._id);
     expect(routes).toHaveLength(1);
   });
 
@@ -276,3 +277,227 @@ async function readSupportRows(t: ReturnType<typeof createTestBackend>, shopId: 
     };
   });
 }
+
+async function setupInbound(seed: string, t = createTestBackend()) {
+  const workspace = await createWorkspace(t, seed);
+  const route = await workspace.client.query(api.inboundEmailRoutes.getForShop, {
+    shopId: workspace.shopId,
+  });
+  if (!route) throw new Error("Expected route");
+  return { t, workspace, route };
+}
+
+describe("inbound email regression coverage", () => {
+  test("retries a previously unmatched delivery after the route is restored", async () => {
+    const { t, route } = await setupInbound("retry");
+    const payload = inboundPayload(route.address);
+    await t.run((ctx) => ctx.db.patch(route._id, { status: "disabled" }));
+    const unmatched = await t.mutation(internal.inboundEmails.ingestFromWorker, payload);
+    expect(unmatched.status).toBe("unmatched");
+    expect((await t.mutation(internal.inboundEmails.ingestFromWorker, payload)).status).toBe(
+      "unmatched",
+    );
+    await t.run((ctx) => ctx.db.patch(route._id, { status: "active" }));
+    const recovered = await t.mutation(internal.inboundEmails.ingestFromWorker, payload);
+    expect(recovered.status).toBe("received");
+    expect(recovered.deliveryId).toBe(unmatched.deliveryId);
+    expect((await t.mutation(internal.inboundEmails.ingestFromWorker, payload)).status).toBe(
+      "duplicate",
+    );
+    const delivery = await t.run((ctx) => ctx.db.get(recovered.deliveryId));
+    expect(delivery?.status).toBe("received");
+    expect(delivery?.error).toBeUndefined();
+  });
+
+  test("keeps unrelated messages from the same customer in separate conversations", async () => {
+    const { t, route } = await setupInbound("separate");
+    const first = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(route.address),
+    );
+    const second = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(route.address, {
+        deliveryKey: "second-issue",
+        messageId: "<second@example.com>",
+        subject: "Refund for another order",
+      }),
+    );
+    if (first.status !== "received" || second.status !== "received")
+      throw new Error("Expected received");
+    expect(first.conversationId).not.toBe(second.conversationId);
+  });
+
+  test("finds references in the correct shop and reopens the closed conversation", async () => {
+    const { t, route: a } = await setupInbound("thread-a");
+    const { route: b } = await setupInbound("thread-b", t);
+    await t.mutation(internal.inboundEmails.ingestFromWorker, inboundPayload(a.address));
+    const original = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(b.address),
+    );
+    if (original.status !== "received") throw new Error("Expected received");
+    await t.run((ctx) => ctx.db.patch(original.conversationId, { status: "closed" }));
+    const reply = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(b.address, {
+        deliveryKey: "reply-b",
+        messageId: "<reply-b@example.com>",
+        inReplyTo: "<message-1@example.com>",
+      }),
+    );
+    if (reply.status !== "received") throw new Error("Expected received");
+    expect(reply.conversationId).toBe(original.conversationId);
+    expect((await t.run((ctx) => ctx.db.get(original.conversationId)))?.status).toBe("open");
+  });
+
+  test("ignores references belonging only to another shop", async () => {
+    const { t, route: a } = await setupInbound("foreign-a");
+    const { route: b } = await setupInbound("foreign-b", t);
+    const original = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(a.address),
+    );
+    const reply = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(b.address, {
+        deliveryKey: "foreign-reply",
+        messageId: "<foreign-reply@example.com>",
+        inReplyTo: "<message-1@example.com>",
+      }),
+    );
+    if (original.status !== "received" || reply.status !== "received")
+      throw new Error("Expected received");
+    expect(reply.conversationId).not.toBe(original.conversationId);
+  });
+
+  test("uses the closest reference when no In-Reply-To is provided", async () => {
+    const { t, route } = await setupInbound("closest");
+    await t.mutation(internal.inboundEmails.ingestFromWorker, inboundPayload(route.address));
+    const second = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(route.address, {
+        deliveryKey: "second",
+        messageId: "<second@example.com>",
+      }),
+    );
+    const reply = await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(route.address, {
+        deliveryKey: "closest-reply",
+        messageId: "<closest-reply@example.com>",
+        references: ["<message-1@example.com>", "<second@example.com>"],
+      }),
+    );
+    if (second.status !== "received" || reply.status !== "received")
+      throw new Error("Expected received");
+    expect(reply.conversationId).toBe(second.conversationId);
+  });
+
+  test("records server receipt time separately from sender time", async () => {
+    const { t, workspace, route } = await setupInbound("clock");
+    const before = Date.now();
+    const sentAt = Date.parse("2001-01-01T00:00:00Z");
+    await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(route.address, { receivedAt: sentAt, sentAt }),
+    );
+    const rows = await readSupportRows(t, workspace.shopId);
+    expect(rows.messages[0].receivedAt).toBeGreaterThanOrEqual(before);
+    expect(rows.messages[0].sentAt).toBe(sentAt);
+    expect(rows.conversations[0].lastMessageAt).toBe(rows.messages[0].receivedAt);
+    expect(rows.deliveries[0].receivedAt).toBe(rows.messages[0].receivedAt);
+  });
+
+  test.each([
+    "agent",
+    "viewer",
+  ] as const)("%s cannot provision through onboarding or route management", async (role) => {
+    const { t, workspace, route } = await setupInbound(`role-${role}`);
+    await t.run(async (ctx) => {
+      const member = await ctx.db
+        .query("memberships")
+        .withIndex("by_organizationId", (q) => q.eq("organizationId", workspace.organizationId))
+        .first();
+      if (!member) throw new Error("Expected membership");
+      await ctx.db.patch(member._id, { role });
+      await ctx.db.delete(route._id);
+    });
+    await expect(
+      workspace.client.mutation(api.inboundEmailRoutes.ensureForShop, { shopId: workspace.shopId }),
+    ).rejects.toThrow("Forbidden");
+    await workspace.client.mutation(api.onboarding.bootstrap, {});
+    expect(
+      await workspace.client.query(api.inboundEmailRoutes.getForShop, { shopId: workspace.shopId }),
+    ).toBeNull();
+  });
+
+  test.each([
+    "owner",
+    "admin",
+  ] as const)("%s can provision a legacy shop without a route", async (role) => {
+    const { t, workspace, route } = await setupInbound(`legacy-${role}`);
+    await t.run(async (ctx) => {
+      const member = await ctx.db
+        .query("memberships")
+        .withIndex("by_organizationId", (q) => q.eq("organizationId", workspace.organizationId))
+        .first();
+      if (!member) throw new Error("Expected membership");
+      await ctx.db.patch(member._id, { role });
+      await ctx.db.delete(route._id);
+    });
+    expect(
+      await workspace.client.mutation(api.inboundEmailRoutes.ensureForShop, {
+        shopId: workspace.shopId,
+      }),
+    ).toMatchObject({ status: "active" });
+  });
+
+  test.each(["disabled", "rotated"] as const)("does not replace a %s route", async (status) => {
+    const { t, workspace, route } = await setupInbound(`route-${status}`);
+    await t.run((ctx) => ctx.db.patch(route._id, { status }));
+    await workspace.client.mutation(api.onboarding.bootstrap, {});
+    expect(
+      await workspace.client.mutation(api.inboundEmailRoutes.ensureForShop, {
+        shopId: workspace.shopId,
+      }),
+    ).toBeNull();
+    const routes = await t.run((ctx) =>
+      ctx.db
+        .query("inboundEmailRoutes")
+        .withIndex("by_shopId", (q) => q.eq("shopId", workspace.shopId))
+        .take(5),
+    );
+    expect(routes).toHaveLength(1);
+    expect(routes[0].status).toBe(status);
+  });
+
+  test("disabled shops do not receive messages or provision routes", async () => {
+    const { t, workspace, route } = await setupInbound("disabled-shop");
+    await t.run((ctx) => ctx.db.patch(workspace.shopId, { status: "disabled" }));
+    expect(
+      (await t.mutation(internal.inboundEmails.ingestFromWorker, inboundPayload(route.address)))
+        .status,
+    ).toBe("unmatched");
+    expect(
+      await workspace.client.mutation(api.inboundEmailRoutes.ensureForShop, {
+        shopId: workspace.shopId,
+      }),
+    ).toBeNull();
+    expect((await readSupportRows(t, workspace.shopId)).messages).toHaveLength(0);
+  });
+
+  test("requires authentication and organization membership for route access", async () => {
+    const { t, workspace: a } = await setupInbound("access-a");
+    const { workspace: b } = await setupInbound("access-b", t);
+    await expect(t.query(api.inboundEmailRoutes.getForShop, { shopId: a.shopId })).rejects.toThrow(
+      "Unauthenticated",
+    );
+    await expect(
+      a.client.query(api.inboundEmailRoutes.getForShop, { shopId: b.shopId }),
+    ).rejects.toThrow("Forbidden");
+    await expect(
+      a.client.mutation(api.inboundEmailRoutes.ensureForShop, { shopId: b.shopId }),
+    ).rejects.toThrow("Forbidden");
+  });
+});

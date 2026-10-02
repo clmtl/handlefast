@@ -24,6 +24,8 @@ function Dashboard() {
   const ensureInboundEmailRoute = useMutation(api.inboundEmailRoutes.ensureForShop);
   const [hasRequestedInboundRoute, setHasRequestedInboundRoute] = useState(false);
   const [copiedInboundAddress, setCopiedInboundAddress] = useState(false);
+  const [inboundRouteError, setInboundRouteError] = useState("");
+  const [copyError, setCopyError] = useState("");
 
   useEffect(() => {
     if (viewer && !viewer.hasCompletedOnboarding) {
@@ -41,12 +43,25 @@ function Dashboard() {
   const canManageWorkspace = membership?.role === "owner" || membership?.role === "admin";
 
   useEffect(() => {
-    if (!shop || inboundEmailRoute || !canManageWorkspace || hasRequestedInboundRoute) {
+    if (
+      !shop ||
+      shop.status === "disabled" ||
+      inboundEmailRoute ||
+      !canManageWorkspace ||
+      hasRequestedInboundRoute
+    ) {
       return;
     }
 
     setHasRequestedInboundRoute(true);
-    void ensureInboundEmailRoute({ shopId: shop._id });
+    void ensureInboundEmailRoute({ shopId: shop._id })
+      .then((route) => {
+        if (!route)
+          setInboundRouteError("Email reception is paused. Contact your workspace administrator.");
+      })
+      .catch(() =>
+        setInboundRouteError("Unable to create your receiving address. Please try again."),
+      );
   }, [
     canManageWorkspace,
     ensureInboundEmailRoute,
@@ -86,7 +101,17 @@ function Dashboard() {
         <Panel
           icon={Inbox}
           label="Inbound email"
-          value={inboundEmailRoute ? "Ready" : canManageWorkspace ? "Setting up" : "Not ready"}
+          value={
+            shop?.status === "disabled"
+              ? "Disabled"
+              : inboundRouteError
+                ? "Needs attention"
+                : inboundEmailRoute
+                  ? "Address created"
+                  : canManageWorkspace
+                    ? "Setting up"
+                    : "Not ready"
+          }
         />
       </section>
 
@@ -109,14 +134,23 @@ function Dashboard() {
                   id="inboundEmailAddress"
                   title={inboundEmailRoute?.address}
                 >
-                  {inboundEmailRoute?.address ?? "Creating address"}
+                  {inboundEmailRoute?.address ??
+                    (inboundRouteError || shop?.status === "disabled" || !canManageWorkspace
+                      ? "Address unavailable"
+                      : "Creating address")}
                 </code>
                 <button
                   aria-label="Copy inbound address"
                   className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                   disabled={!inboundEmailRoute?.address}
                   onClick={() => {
-                    void copyInboundAddress(inboundEmailRoute?.address, setCopiedInboundAddress);
+                    setCopyError("");
+                    void copyInboundAddress(
+                      inboundEmailRoute?.address,
+                      setCopiedInboundAddress,
+                    ).catch(() =>
+                      setCopyError("Copy failed. Select the address and copy it manually."),
+                    );
                   }}
                   title="Copy inbound address"
                   type="button"
@@ -127,6 +161,34 @@ function Dashboard() {
               <div className="min-h-5 text-sm text-muted-foreground">
                 {copiedInboundAddress ? "Copied" : " "}
               </div>
+              {copyError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {copyError}
+                </p>
+              )}
+              {inboundRouteError && (
+                <div className="grid gap-2">
+                  <p role="alert" className="text-sm text-destructive">
+                    {inboundRouteError}
+                  </p>
+                  <button
+                    type="button"
+                    className="w-fit rounded-md border px-3 py-2 text-sm"
+                    onClick={() => {
+                      setInboundRouteError("");
+                      setHasRequestedInboundRoute(false);
+                    }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+              {inboundEmailRoute && shop?.status !== "disabled" && (
+                <p className="text-sm text-muted-foreground">
+                  Your address has been created. Email forwarding still needs to be configured and
+                  tested.
+                </p>
+              )}
             </div>
           </div>
 

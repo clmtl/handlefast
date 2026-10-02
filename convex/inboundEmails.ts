@@ -47,8 +47,19 @@ export const ingestFromWorker = internalMutation({
     references: v.array(v.string()),
     attachments: v.array(attachmentSummaryValidator),
     receivedAt: v.number(),
+    sentAt: v.optional(v.number()),
     rawSize: v.number(),
   },
+  returns: v.union(
+    v.object({ status: v.literal("duplicate"), deliveryId: v.id("inboundEmailDeliveries") }),
+    v.object({ status: v.literal("unmatched"), deliveryId: v.id("inboundEmailDeliveries") }),
+    v.object({
+      status: v.literal("received"),
+      deliveryId: v.id("inboundEmailDeliveries"),
+      conversationId: v.id("supportConversations"),
+      supportMessageId: v.id("supportMessages"),
+    }),
+  ),
   handler: async (ctx, args) => {
     const now = Date.now();
     const deliveryKey = args.deliveryKey.trim();
@@ -58,7 +69,7 @@ export const ingestFromWorker = internalMutation({
       .withIndex("by_deliveryKey", (q) => q.eq("deliveryKey", deliveryKey))
       .unique();
 
-    if (existingDelivery) {
+    if (existingDelivery?.status === "received" || existingDelivery?.status === "duplicate") {
       return {
         status: "duplicate" as const,
         deliveryId: existingDelivery._id,
@@ -71,7 +82,11 @@ export const ingestFromWorker = internalMutation({
       .withIndex("by_address", (q) => q.eq("address", envelopeTo))
       .unique();
 
-    if (route?.status !== "active") {
+    const shop = route ? await ctx.db.get(route.shopId) : null;
+    if (route?.status !== "active" || !shop || shop.status === "disabled") {
+      if (existingDelivery) {
+        return { status: "unmatched" as const, deliveryId: existingDelivery._id };
+      }
       const messageId = normalizeOptionalString(args.messageId);
       const deliveryId = await ctx.db.insert("inboundEmailDeliveries", {
         provider: args.provider,
@@ -79,7 +94,7 @@ export const ingestFromWorker = internalMutation({
         envelopeFrom: normalizeEmailAddress(args.envelopeFrom),
         envelopeTo,
         ...(messageId ? { messageId } : {}),
-        receivedAt: args.receivedAt,
+        receivedAt: now,
         rawSize: args.rawSize,
         status: "unmatched",
         error: "InboundEmailRouteNotFound",
@@ -108,7 +123,7 @@ export const ingestFromWorker = internalMutation({
       subject,
     });
 
-    const deliveryId = await ctx.db.insert("inboundEmailDeliveries", {
+    const deliveryFields = {
       organizationId: route.organizationId,
       shopId: route.shopId,
       routeId: route._id,
@@ -117,12 +132,21 @@ export const ingestFromWorker = internalMutation({
       envelopeFrom: normalizeEmailAddress(args.envelopeFrom),
       envelopeTo,
       ...(messageId ? { messageId } : {}),
-      receivedAt: args.receivedAt,
+      receivedAt: now,
       rawSize: args.rawSize,
-      status: "received",
+      status: "received" as const,
       createdAt: now,
       updatedAt: now,
-    });
+    };
+    const deliveryId = existingDelivery
+      ? existingDelivery._id
+      : await ctx.db.insert("inboundEmailDeliveries", deliveryFields);
+    if (existingDelivery) {
+      await ctx.db.replace(deliveryId, {
+        ...deliveryFields,
+        createdAt: existingDelivery.createdAt,
+      });
+    }
 
     const text = truncateOptional(args.text, maxBodyLength);
     const html = truncateOptional(args.html, maxBodyLength);
@@ -147,7 +171,8 @@ export const ingestFromWorker = internalMutation({
       ...(messageId ? { messageId } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
       references,
-      receivedAt: args.receivedAt,
+      receivedAt: now,
+      ...(args.sentAt !== undefined && Number.isFinite(args.sentAt) ? { sentAt: args.sentAt } : {}),
       rawSize: args.rawSize,
       attachmentCount: attachmentSummaries.length,
       createdAt: now,
@@ -169,7 +194,8 @@ export const ingestFromWorker = internalMutation({
     }
 
     await ctx.db.patch(conversationId, {
-      lastMessageAt: args.receivedAt,
+      lastMessageAt: now,
+      status: "open",
       updatedAt: now,
     });
 
@@ -195,26 +221,11 @@ async function getOrCreateConversationId(
 ) {
   const referencedMessageId = await getConversationIdByReferences(ctx, args.route.shopId, [
     args.inReplyTo,
-    ...args.references,
+    ...[...args.references].reverse(),
   ]);
 
   if (referencedMessageId) {
     return referencedMessageId;
-  }
-
-  const recentConversations = await ctx.db
-    .query("supportConversations")
-    .withIndex("by_shopId_and_customerEmail", (q) =>
-      q.eq("shopId", args.route.shopId).eq("customerEmail", args.customerEmail),
-    )
-    .order("desc")
-    .take(10);
-  const openConversation = recentConversations.find(
-    (conversation) => conversation.status !== "closed",
-  );
-
-  if (openConversation) {
-    return openConversation._id;
   }
 
   return await ctx.db.insert("supportConversations", {
@@ -242,7 +253,9 @@ async function getConversationIdByReferences(
 
     const referencedMessages = await ctx.db
       .query("supportMessages")
-      .withIndex("by_messageId", (q) => q.eq("messageId", reference))
+      .withIndex("by_shopId_and_messageId", (q) =>
+        q.eq("shopId", shopId).eq("messageId", reference),
+      )
       .take(1);
     const referencedMessage = referencedMessages[0];
 
@@ -291,7 +304,7 @@ function normalizeReferences(references: string[]) {
   return references
     .map((reference) => reference.trim())
     .filter(Boolean)
-    .slice(0, maxReferenceCount);
+    .slice(-maxReferenceCount);
 }
 
 function normalizeAttachmentSummaries(

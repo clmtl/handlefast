@@ -187,6 +187,7 @@ export default defineSchema({
     inReplyTo: v.optional(v.string()),
     references: v.array(v.string()),
     receivedAt: v.number(),
+    sentAt: v.optional(v.number()),
     rawSize: v.number(),
     attachmentCount: v.number(),
     createdAt: v.number(),
@@ -195,7 +196,8 @@ export default defineSchema({
     .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
     .index("by_shopId_and_createdAt", ["shopId", "createdAt"])
     .index("by_deliveryId", ["deliveryId"])
-    .index("by_messageId", ["messageId"]),
+    .index("by_messageId", ["messageId"])
+    .index("by_shopId_and_messageId", ["shopId", "messageId"]),
 
   emailAttachments: defineTable({
     organizationId: v.id("organizations"),
