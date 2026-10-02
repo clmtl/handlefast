@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { LogOut, Settings, ShieldCheck, Store } from "lucide-react";
+import { Inbox, LogOut, ShieldCheck, Store } from "lucide-react";
 import { useEffect } from "react";
 import { LoadingScreen, RequireAuth } from "@/components/auth-layout";
+import { InboundEmailSettings } from "@/components/inbound-email-settings";
 import { authClient } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 
@@ -28,14 +29,15 @@ function Dashboard() {
     }
   }, [navigate, viewer]);
 
+  const organization = viewer?.organizations[0];
+  const membership = viewer?.memberships[0];
+  const shop = viewer?.shops[0];
+  const inboundEmailRoute = shop
+    ? viewer?.inboundEmailRoutes.find((route) => route.shopId === shop._id)
+    : undefined;
   if (viewer === undefined || !viewer.hasCompletedOnboarding) {
     return <LoadingScreen label="Loading your workspace" />;
   }
-
-  const organization = viewer.organizations[0];
-  const membership = viewer.memberships[0];
-  const shop = viewer.shops[0];
-  const settings = viewer.shopSettings[0];
 
   return (
     <main className="min-h-dvh bg-background text-foreground">
@@ -62,20 +64,21 @@ function Dashboard() {
         <Panel icon={ShieldCheck} label="Role" value={membership?.role ?? "owner"} />
         <Panel icon={Store} label="First shop" value={shop?.name ?? "Primary shop"} />
         <Panel
-          icon={Settings}
-          label="Auto-replies"
-          value={settings?.autoReplyEnabled ? "Enabled" : "Disabled"}
+          icon={Inbox}
+          label="Inbound email"
+          value={
+            shop?.status === "disabled"
+              ? "Disabled"
+              : inboundEmailRoute?.verifiedAt &&
+                  inboundEmailRoute.verifiedSupportEmail === shop?.supportEmail
+                ? "Forwarding verified"
+                : "Setup incomplete"
+          }
         />
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-5 pb-10 md:px-8">
-        <div className="rounded-lg border bg-card p-5">
-          <h1 className="text-2xl font-semibold tracking-normal">Workspace foundation ready</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Authentication, tenant ownership, shop scoping, and default support settings are in
-            place. The next feature can safely attach inbound emails to this shop.
-          </p>
-        </div>
+        {shop && <InboundEmailSettings key={shop._id} shopId={shop._id} />}
       </section>
     </main>
   );

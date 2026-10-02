@@ -6,6 +6,8 @@ const app = defineApp({
   env: {
     AUTH_EMAIL_FROM: v.optional(v.string()),
     BETTER_AUTH_SECRET: v.string(),
+    CLOUDFLARE_EMAIL_WEBHOOK_SECRET: v.optional(v.string()),
+    INBOUND_EMAIL_DOMAIN: v.optional(v.string()),
     RESEND_API_KEY: v.optional(v.string()),
     SITE_URL: v.string(),
   },
