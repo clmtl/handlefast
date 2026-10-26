@@ -55,7 +55,8 @@ No automatic reply, spam/SAV classification, Shopify integration or sending pipe
 - Convex: `clement-llorens:handlefast-1a353:preview/staging`, URL `https://frugal-gecko-721.convex.cloud`.
 - Email Routing is enabled for `handlefast.io`; its catch-all points to `handlefast-staging`. Cloudflare reports the domain ready. The previous main Worker and Convex production deployment are unchanged.
 - Webhook secrets are configured on both services. The deployed backend passed synthetic upload/parsing/download checks at 1 KiB and 25 MiB. These checks do not prove SMTP delivery or forwarding from a real mailbox.
-- Remaining prerequisite: configure `RESEND_API_KEY` and `AUTH_EMAIL_FROM` on this staging Convex deployment for account-verification emails. Signup deliberately requires email verification; do not disable it to work around missing mail configuration. Then validate real mailbox forwarding before promoting the feature.
+- Resend has verified `handlefast.io`; its sending-only staging key is configured as `RESEND_API_KEY` on this Convex deployment, with `AUTH_EMAIL_FROM=HandleFast <auth@handlefast.io>`. Sending DNS records preserve Cloudflare's inbound routing. Signup deliberately requires email verification.
+- Remaining acceptance checks: create a real staging account, receive and follow its verification email, then validate real mailbox forwarding before promoting the feature.
 
 For staging builds, put these public values in the ignored `.env.staging` file:
 
