@@ -123,7 +123,7 @@ describe("inbound email routing", () => {
     });
     const viewer = await workspace.client.query(api.viewer.me);
 
-    expect(route?.address).toMatch(/@in\.handlefast\.io$/);
+    expect(route?.address).toMatch(/@handlefast\.io$/);
     expect(route?.status).toBe("active");
     expect(viewer.inboundEmailRoutes).toMatchObject([{ _id: route?._id }]);
   });
@@ -219,7 +219,7 @@ describe("inbound email routing", () => {
 
     const result = await t.mutation(
       internal.inboundEmails.ingestFromWorker,
-      inboundPayload("unknown@in.handlefast.io"),
+      inboundPayload("unknown@handlefast.io"),
     );
     const rows = await t.run(async (ctx) => {
       const deliveries = await ctx.db.query("inboundEmailDeliveries").take(10);

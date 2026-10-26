@@ -2,11 +2,11 @@
 
 ## Inbound support email (feature 2)
 
-Implemented on `feature/inbound-email-routing`. Real Cloudflare delivery and mailbox forwarding still need deployment and acceptance testing; `FEATURES.md` remains unchecked until then.
+Implemented on `feature/inbound-email-routing` and deployed to the dedicated staging environment. Real mailbox forwarding still needs acceptance testing; `FEATURES.md` remains unchecked until then.
 
 ### Behavior
 
-- Each shop has an individual receiving address under `INBOUND_EMAIL_DOMAIN`.
+- Each shop has an individual receiving address under `INBOUND_EMAIL_DOMAIN` (default: `handlefast.io`).
 - Maximum **25 MiB (26,214,400 bytes)** for the complete MIME email, including encoded attachments. The limit applies before attachment decoding.
 - The Worker reserves an upload through an HMAC-authenticated webhook, uploads the original directly to Convex Storage, and confirms it. The backend verifies its size, SHA-256 and media type before accepting it.
 - A scheduled Node action parses the saved original. Node is required because decoding a 25 MiB MIME message exceeds the default Convex runtime's memory limit. Documents contain bounded previews and at most 100 attachment summaries; all content and attachment bytes remain in the original and are available in the reader.
@@ -42,9 +42,27 @@ This local-only test creates synthetic workspaces, stores emails of 1 KiB and ex
 
 1. Connect a Convex cloud project and authenticate Wrangler. Configure the existing authentication variables plus `INBOUND_EMAIL_DOMAIN` and `CLOUDFLARE_EMAIL_WEBHOOK_SECRET` on Convex. Put the **same** webhook secret on the Worker and set its `CONVEX_SITE_URL` to the cloud HTTP-actions URL. Frontend `VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL` and `VITE_SITE_URL` must target this deployment, not localhost. See `.env.example`.
 2. Deploy Convex before deploying the Worker. The reserve/upload/complete protocol replaces the earlier metadata-only webhook: coordinate rollout while no production email route is enabled.
-3. Configure Cloudflare Email Routing and the required MX/TXT records for the receiving domain, then route its catch-all to this Worker. Preserve MX records on any domain already used by the shop's mailbox. Confirm the effective provider size limit supports the configured 25 MiB maximum.
+3. Configure Cloudflare Email Routing and the required MX/TXT records for `handlefast.io`, then route its catch-all to this Worker. Cloudflare only supports catch-all on the apex domain, so do not use `in.handlefast.io` for this setup (see [Cloudflare subdomain configuration](https://developers.cloudflare.com/email-service/configuration/subdomains/)). Preserve MX records on any domain already used by the shop's mailbox. Confirm the effective provider size limit supports the configured 25 MiB maximum.
 4. In HandleFast, copy the shop's receiving address. In the existing support mailbox, add it as a forwarding destination and retain a mailbox copy. Gmail's confirmation email can be opened in HandleFast; complete the confirmation and enable forwarding in Gmail.
 5. Prepare a test in HandleFast, then send from a different mailbox to the shop's original support address with the displayed subject. The challenge lasts 30 minutes. Only an arriving message whose original To matches that support address marks the connection verified.
 6. Validate real text/HTML mail, attachment download, duplicate delivery, separate conversations, replies to closed conversations, disabled reception and recovery after a temporary backend outage. Validate the 25 MiB boundary through Cloudflare as well as Convex. Do not mark feature 2 complete until this real-provider check succeeds.
 
 No automatic reply, spam/SAV classification, Shopify integration or sending pipeline is included in feature 2.
+
+### Staging environment (2026-10-26)
+
+- Site/Worker: https://handlefast-staging.bk201li.workers.dev (`handlefast-staging`).
+- Convex: `clement-llorens:handlefast-1a353:preview/staging`, URL `https://frugal-gecko-721.convex.cloud`.
+- Email Routing is enabled for `handlefast.io`; its catch-all points to `handlefast-staging`. Cloudflare reports the domain ready. The previous main Worker and Convex production deployment are unchanged.
+- Webhook secrets are configured on both services. The deployed backend passed synthetic upload/parsing/download checks at 1 KiB and 25 MiB. These checks do not prove SMTP delivery or forwarding from a real mailbox.
+- Remaining prerequisite: configure `RESEND_API_KEY` and `AUTH_EMAIL_FROM` on this staging Convex deployment for account-verification emails. Signup deliberately requires email verification; do not disable it to work around missing mail configuration. Then validate real mailbox forwarding before promoting the feature.
+
+For staging builds, put these public values in the ignored `.env.staging` file:
+
+```dotenv
+VITE_CONVEX_URL=https://frugal-gecko-721.convex.cloud
+VITE_CONVEX_SITE_URL=https://frugal-gecko-721.convex.site
+VITE_SITE_URL=https://handlefast-staging.bk201li.workers.dev
+```
+
+Use `npm run deploy:staging` for the Worker. For Convex, the local ignored `.env.deploy-staging` contains a deployment-scoped key: `npx convex deploy --env-file .env.deploy-staging`. Keep deploy keys and backend secrets out of Git. If the staging deployment is replaced, update both URLs and the email route before testing again.

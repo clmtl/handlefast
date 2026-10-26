@@ -17,7 +17,9 @@
     "check": "biome check .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "ui:add": "shadcn add"
+    "ui:add": "shadcn add",
+    "build:staging": "CLOUDFLARE_ENV=staging vite build --mode staging",
+    "deploy:staging": "npm run build:staging && wrangler deploy --config dist/server/wrangler.json"
   },
   "engines": {
     "node": ">=22.0.0"

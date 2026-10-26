@@ -16,7 +16,7 @@ function message() {
   if (!raw) throw new Error("Expected body");
   return {
     from: "client@example.com",
-    to: "shop@in.handlefast.io",
+    to: "shop@handlefast.io",
     headers: new Headers(),
     raw,
     rawSize: new TextEncoder().encode(body).byteLength,

@@ -317,7 +317,7 @@ describe("durable email storage", () => {
     expect(
       await f.t.mutation(internal.emailReceipts.reserve, {
         ...f.input,
-        envelopeTo: "unknown@in.handlefast.io",
+        envelopeTo: "unknown@handlefast.io",
       }),
     ).toEqual({ status: "rejected" });
     await f.workspace.client.mutation(api.emailInbox.setEnabled, {

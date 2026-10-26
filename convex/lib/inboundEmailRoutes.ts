@@ -1,7 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import { env, type MutationCtx } from "../_generated/server";
 
-const defaultInboundEmailDomain = "in.handlefast.io";
+const defaultInboundEmailDomain = "handlefast.io";
 const maxEmailLocalPartLength = 64;
 
 export function normalizeEmailAddress(value: string) {

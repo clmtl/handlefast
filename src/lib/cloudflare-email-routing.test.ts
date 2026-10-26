@@ -5,7 +5,7 @@ describe("Cloudflare email routing payload", () => {
   test("parses a raw MIME email into the Convex ingestion payload", async () => {
     const rawEmail = [
       "From: Customer <customer@example.com>",
-      "To: hf_shop@in.handlefast.io",
+      "To: hf_shop@handlefast.io",
       "Reply-To: Customer Replies <reply@example.com>",
       "Message-ID: <order-help@example.com>",
       "Subject: Order help",
@@ -24,16 +24,16 @@ describe("Cloudflare email routing payload", () => {
     const before = Date.now();
     const payload = await buildCloudflareEmailRoutingPayload({
       from: "customer@example.com",
-      to: "hf_shop@in.handlefast.io",
+      to: "hf_shop@handlefast.io",
       headers: new Headers(),
       raw,
       rawSize,
     });
 
     expect(payload).toMatchObject({
-      deliveryKey: "cloudflare_email_routing:hf_shop@in.handlefast.io:<order-help@example.com>",
+      deliveryKey: "cloudflare_email_routing:hf_shop@handlefast.io:<order-help@example.com>",
       envelopeFrom: "customer@example.com",
-      envelopeTo: "hf_shop@in.handlefast.io",
+      envelopeTo: "hf_shop@handlefast.io",
       from: { address: "customer@example.com", name: "Customer" },
       messageId: "<order-help@example.com>",
       provider: "cloudflare_email_routing",
