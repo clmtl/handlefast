@@ -22,7 +22,7 @@ the shop's HandleFast address. Production was not modified.
 | Failure after storage | A small synthetic original was uploaded and a narrow internal fixture set its processing lease. Calling the real failure handler left it saved and failed. The scheduled retry processed it automatically on attempt 2, about two minutes later, without a manual retry. | Passed |
 | Reception paused | Paused in the dashboard, then sent a real email. Gmail received `555 5.7.1 This HandleFast address is not accepting email`. No new receipt/message was created; previous mail stayed readable. | Passed |
 | Reception resumed | Resumed in the dashboard and prepared a fresh challenge. A real email to the support mailbox changed the status back to `Forwarding verified`. | Passed |
-| Backend request failure before storage | A temporary Worker condition applied an invalid webhook signature only to the uniquely named synthetic email. The real HTTP request returned 401, and the Worker threw. Cloudflare reported `upstream (worker:handlefast-staging) temporary error: worker script threw an exception`. Normal configuration was restored immediately afterward. | Awaiting Gmail retry |
+| Backend request failure before storage | A temporary Worker condition applied an invalid webhook signature only to the uniquely named synthetic email. The real HTTP request returned 401, and the Worker threw. Cloudflare reported `upstream (worker:handlefast-staging) temporary error: worker script threw an exception`. Normal configuration was restored immediately afterward. Gmail retried the same `Message-ID` about 6 minutes 20 seconds later; Cloudflare recorded a successful invocation and Convex processed its 12,107-byte original on attempt 1. | Passed |
 
 ## Scope and limitations
 
@@ -42,3 +42,5 @@ the shop's HandleFast address. Production was not modified.
   were removed and the normal backend/Worker redeployed after their tests.
 - The complete suite passed again: 59 automated tests. This run also passed
   TypeScript, Biome lint and a staging production build after the setup-copy fix.
+
+All acceptance scenarios above passed. The feature is ready for review into `staging`; this is not a production-release approval.

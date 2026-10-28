@@ -2,7 +2,7 @@
 
 ## Inbound support email (feature 2)
 
-Implemented on `feature/inbound-email-routing` and deployed to the dedicated staging environment. Real Gmail forwarding and its attachment, threading and pause/resume checks pass. The final pre-storage outage retry check is still pending; `FEATURES.md` remains unchecked until then.
+Implemented on `feature/inbound-email-routing` and deployed to the dedicated staging environment. Real Gmail forwarding, attachment integrity, threading, pause/resume, size limits and outage recovery passed acceptance. Feature 2 is checked in `FEATURES.md`; the feature PR is ready for review into `staging`, before any production promotion.
 
 ### Behavior
 
@@ -58,7 +58,7 @@ No automatic reply, spam/SAV classification, Shopify integration or sending pipe
 - Resend has verified `handlefast.io`; its sending-only staging key is configured as `RESEND_API_KEY` on this Convex deployment, with `AUTH_EMAIL_FROM=HandleFast <auth@handlefast.io>`. Sending DNS records preserve Cloudflare's inbound routing. Signup deliberately requires email verification.
 - Acceptance evidence (2026-10-28): the user received and verified the signup email and signed in. Gmail's forwarding confirmation arrived through Cloudflare and was readable in HandleFast. Forwarding is enabled with a copy retained in Gmail. A real message sent from another mailbox passed the support-address challenge (`Forwarding verified`); its text was readable and its PNG attachment downloaded successfully (2,460,949 bytes, 1496 × 1542 pixels).
 - Extended acceptance (2026-10-28): real text/HTML/Unicode and attachment integrity, replies reopening closed conversations, separate unrelated conversations, identical HTTP delivery replay, scheduled processing retry, explicit rejection while paused, and successful reception after resume all passed. A 26,210,470-byte MIME message passed through Gmail/Cloudflare; an oversize message was rejected with SMTP 552. See [the detailed acceptance evidence](docs/inbound-email-acceptance-2026-10-28.md).
-- Remaining check before promotion: Gmail retry after a temporary Worker/backend request failure. The fault injection has been removed and normal reception is active and verified.
+- The final pre-storage failure check also passed: after a deliberately failed webhook request, Cloudflare reported a temporary error. Gmail retried the same `Message-ID` about 6 minutes 20 seconds later; the normal Worker stored it and Convex processed it automatically. All fault injection has been removed, and reception is active and verified.
 
 For staging builds, put these public values in the ignored `.env.staging` file:
 
