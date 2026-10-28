@@ -1,6 +1,15 @@
 # Shopify order context and 17TRACK (feature 4)
 
-Implementation is ready for review. Live merchant installation and real carrier acceptance are still required before checking feature 4 complete.
+Implementation is deployed to staging for acceptance. Live merchant installation and real carrier acceptance are still required before checking feature 4 complete.
+
+## Staging deployment — 2026-10-28
+
+- Application code: `706cf0431e95c8d050456ebb735d1c7d8383fc0f` (PR #5, pending merge into `staging`).
+- Frontend/Worker: `handlefast-staging`, `https://handlefast-staging.bk201li.workers.dev`, deployed version `dccac09f-d7f2-4eb9-bdba-985a78288ddc`.
+- Convex: `clement-llorens:handlefast-1a353:preview/staging`, `https://frugal-gecko-721.convex.cloud`; HTTP endpoints use `https://frugal-gecko-721.convex.site`.
+- `COMMERCE_ENCRYPTION_KEY` generated, configured and read back for equality without logging its value. A backup is stored outside Git in the main checkout's ignored `.env.commerce-staging`, mode `0600`. Preserve this key for this deployment.
+- Verified the served connector matches the source byte for byte, the pairing endpoints reject unauthenticated requests, and the signed-in owner dashboard shows the enabled Shopify connection form.
+- `TRACK17_API_KEY` is not configured yet. The tracking webhook returns `503 TrackingNotConfigured` until it is supplied; no merchant store or real tracking number has been connected by these deployment checks.
 
 ## Client connection
 
@@ -19,7 +28,7 @@ References: [Shopify CLI app init](https://shopify.dev/docs/api/shopify-cli/app/
 
 ## Configuration needed
 
-- **HandleFast operator:** a persistent, random 32-byte key encoded as base64 in the backend-only `COMMERCE_ENCRYPTION_KEY`. Generate it with `openssl rand -base64 32` and set it via `convex env set COMMERCE_ENCRYPTION_KEY` using stdin. Keep a secure backup; replacing the key makes existing connection credentials unreadable and requires reconnection. Never use a `VITE_` prefix. Local testing already generated an isolated local key; staging needs its own key.
+- **HandleFast operator:** a persistent, random 32-byte key encoded as base64 in the backend-only `COMMERCE_ENCRYPTION_KEY`. For new environments, generate it with `openssl rand -base64 32` and set it via `convex env set COMMERCE_ENCRYPTION_KEY` using stdin. Keep a secure backup; replacing the key makes existing connection credentials unreadable and requires reconnection. Never use a `VITE_` prefix. Local testing and staging already have separate keys; preserve them.
 - **Shopify test merchant:** the permanent `myshopify.com` domain, a Shopify account with permission to create apps in the store's organization and install them, and a few orders including a refund and multiple parcels. The merchant runs the connector. No Shopify password or client secret needs to be pasted into chat. Access beyond the default 60-day order history needs Shopify's additional `read_all_orders` approval/configuration; the first version requests only `read_orders`. [Orders permissions](https://shopify.dev/docs/api/usage/access-scopes#orders-permissions)
 - **17TRACK:** an API account, an API key with registration quota set as backend-only `TRACK17_API_KEY`, and a webhook configured at `https://<convex-http-host>/webhooks/17track`. For the existing staging environment that URL is `https://frugal-gecko-721.convex.site/webhooks/17track`. Configure it only when these backend routes are deployed. Use an account separate from production for acceptance. [17TRACK documentation](https://api.17track.net/en/doc)
 - **Frontend/deployment:** `VITE_CONVEX_SITE_URL` must target the same HTTP-actions deployment as the frontend's `VITE_CONVEX_URL`. `SITE_URL` must be the public HandleFast site, which serves the connector as a static asset. Deploy backend before frontend. No application has been installed on a real merchant store by this change.

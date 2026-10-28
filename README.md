@@ -2,7 +2,7 @@
 
 ## Shopify order context and 17TRACK (feature 4)
 
-Merchant-owned Shopify apps are provisioned through a downloadable connector using official Shopify CLI. Pairing automatically binds the installation to the existing HandleFast organization and shop. SAV emails can show their matching order, financial states, items and individual parcel histories; staff can correct associations and refresh data. See [setup, limits and live acceptance requirements](docs/shopify-order-context.md). Backend configuration requires `COMMERCE_ENCRYPTION_KEY` and `TRACK17_API_KEY`. Live provider acceptance remains pending.
+Merchant-owned Shopify apps are provisioned through a downloadable connector using official Shopify CLI. Pairing automatically binds the installation to the existing HandleFast organization and shop. SAV emails can show their matching order, financial states, items and individual parcel histories; staff can correct associations and refresh data. See [setup, limits and live acceptance requirements](docs/shopify-order-context.md). Deployed to staging on 2026-10-28 with `COMMERCE_ENCRYPTION_KEY` configured; `TRACK17_API_KEY` and live provider acceptance remain pending.
 
 ## Inbound support email (feature 2)
 
