@@ -4,6 +4,15 @@
   "compatibility_date": "2026-06-27",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
+  "env": {
+    "staging": {
+      "name": "handlefast-staging",
+      "workers_dev": true,
+      "vars": {
+        "CONVEX_SITE_URL": "https://frugal-gecko-721.convex.site"
+      }
+    }
+  },
   "observability": {
     "enabled": true
   }

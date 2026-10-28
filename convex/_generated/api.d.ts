@@ -9,10 +9,21 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
+import type * as emailInbox from "../emailInbox.js";
+import type * as emailProcessing from "../emailProcessing.js";
+import type * as emailReceipts from "../emailReceipts.js";
+import type * as emailRetention from "../emailRetention.js";
 import type * as http from "../http.js";
+import type * as inboundEmailRoutes from "../inboundEmailRoutes.js";
+import type * as inboundEmails from "../inboundEmails.js";
 import type * as launchPreferences from "../launchPreferences.js";
 import type * as lib_authorization from "../lib/authorization.js";
+import type * as lib_emailPolicy from "../lib/emailPolicy.js";
+import type * as lib_emailReceiptValidators from "../lib/emailReceiptValidators.js";
+import type * as lib_inboundEmailRoutes from "../lib/inboundEmailRoutes.js";
 import type * as lib_slugs from "../lib/slugs.js";
+import type * as lib_webhookSignatures from "../lib/webhookSignatures.js";
 import type * as onboarding from "../onboarding.js";
 import type * as organizations from "../organizations.js";
 import type * as shops from "../shops.js";
@@ -26,10 +37,21 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  crons: typeof crons;
+  emailInbox: typeof emailInbox;
+  emailProcessing: typeof emailProcessing;
+  emailReceipts: typeof emailReceipts;
+  emailRetention: typeof emailRetention;
   http: typeof http;
+  inboundEmailRoutes: typeof inboundEmailRoutes;
+  inboundEmails: typeof inboundEmails;
   launchPreferences: typeof launchPreferences;
   "lib/authorization": typeof lib_authorization;
+  "lib/emailPolicy": typeof lib_emailPolicy;
+  "lib/emailReceiptValidators": typeof lib_emailReceiptValidators;
+  "lib/inboundEmailRoutes": typeof lib_inboundEmailRoutes;
   "lib/slugs": typeof lib_slugs;
+  "lib/webhookSignatures": typeof lib_webhookSignatures;
   onboarding: typeof onboarding;
   organizations: typeof organizations;
   shops: typeof shops;

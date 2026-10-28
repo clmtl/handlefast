@@ -17,7 +17,9 @@
     "check": "biome check .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "ui:add": "shadcn add"
+    "ui:add": "shadcn add",
+    "build:staging": "CLOUDFLARE_ENV=staging vite build --mode staging",
+    "deploy:staging": "npm run build:staging && wrangler deploy --config dist/server/wrangler.json"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -40,6 +42,7 @@
     "clsx": "^2.1.1",
     "convex": "^1.42.0",
     "lucide-react": "^1.21.0",
+    "postal-mime": "^2.7.5",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tailwind-merge": "^3.6.0",

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import { mutation } from "./_generated/server";
 import { getProfileByAuthUserId, requireAuthContext } from "./lib/authorization";
+import { ensureInboundEmailRouteForShop } from "./lib/inboundEmailRoutes";
 import { slugify } from "./lib/slugs";
 
 export const bootstrap = mutation({
@@ -9,6 +10,13 @@ export const bootstrap = mutation({
     organizationName: v.optional(v.string()),
     shopName: v.optional(v.string()),
   },
+  returns: v.object({
+    profileId: v.id("profiles"),
+    organizationId: v.id("organizations"),
+    shopId: v.optional(v.id("shops")),
+    inboundEmailRouteId: v.optional(v.id("inboundEmailRoutes")),
+    created: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const { authUser, tokenIdentifier } = await requireAuthContext(ctx);
     const now = Date.now();
@@ -49,9 +57,26 @@ export const bootstrap = mutation({
       .take(1);
 
     if (existingMembership.length > 0) {
+      const existingShop = await ctx.db
+        .query("shops")
+        .withIndex("by_organizationId", (q) =>
+          q.eq("organizationId", existingMembership[0].organizationId),
+        )
+        .take(1);
+      const inboundEmailRoute = existingShop[0]
+        ? await ctx.db
+            .query("inboundEmailRoutes")
+            .withIndex("by_shopId_and_status", (q) =>
+              q.eq("shopId", existingShop[0]._id).eq("status", "active"),
+            )
+            .first()
+        : null;
+
       return {
         profileId: profile._id,
         organizationId: existingMembership[0].organizationId,
+        ...(existingShop[0] ? { shopId: existingShop[0]._id } : {}),
+        ...(inboundEmailRoute ? { inboundEmailRouteId: inboundEmailRoute._id } : {}),
         created: false,
       };
     }
@@ -94,10 +119,23 @@ export const bootstrap = mutation({
       updatedAt: now,
     });
 
+    const shop = await ctx.db.get(shopId);
+
+    if (!shop) {
+      throw new Error("Failed to create shop");
+    }
+
+    const inboundEmailRoute = await ensureInboundEmailRouteForShop(ctx, shop, now);
+
+    if (!inboundEmailRoute) {
+      throw new Error("Failed to create inbound email route");
+    }
+
     return {
       profileId: profile._id,
       organizationId,
       shopId,
+      inboundEmailRouteId: inboundEmailRoute._id,
       created: true,
     };
   },
