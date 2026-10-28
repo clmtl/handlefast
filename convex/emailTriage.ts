@@ -1,0 +1,204 @@
+import { paginationOptsValidator } from "convex/server";
+import { ConvexError, v } from "convex/values";
+import { env, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { getOrCreateConversationId } from "./inboundEmails";
+import { requireShopMembership } from "./lib/authorization";
+import { TRIAGE_RESERVATION_CENTS, TRIAGE_VERSION, triageBucket } from "./lib/emailTriagePolicy";
+
+export const context = internalQuery({
+  args: {
+    receiptId: v.id("emailReceipts"),
+    now: v.number(),
+    subject: v.string(),
+    from: v.string(),
+    to: v.array(v.string()),
+    references: v.array(v.string()),
+  },
+  returns: v.object({ setup: v.boolean(), previous: v.string() }),
+  handler: async (ctx, args) => {
+    const receipt = await ctx.db.get(args.receiptId);
+    if (!receipt) return { setup: false, previous: "" };
+    const test = await ctx.db
+      .query("emailConnectionTests")
+      .withIndex("by_routeId", (q) => q.eq("routeId", receipt.routeId))
+      .order("desc")
+      .first();
+    const setup =
+      Boolean(
+        test &&
+          test.expiresAt > args.now &&
+          args.subject.includes(String(test._id)) &&
+          args.to.includes(test.supportEmail),
+      ) ||
+      (args.from.toLowerCase() === "forwarding-noreply@google.com" &&
+        /forwarding confirmation/i.test(args.subject));
+    for (const reference of args.references.slice(0, 20)) {
+      const message = await ctx.db
+        .query("supportMessages")
+        .withIndex("by_shopId_and_messageId", (q) =>
+          q.eq("shopId", receipt.shopId).eq("messageId", reference),
+        )
+        .first();
+      if (
+        message?.from.address === args.from.toLowerCase() &&
+        message.expiresAt &&
+        message.expiresAt > args.now
+      ) {
+        return {
+          setup,
+          previous: `${message.subject ?? ""}\n${message.text ?? message.snippet ?? ""}`.slice(
+            0,
+            1500,
+          ),
+        };
+      }
+    }
+    return { setup, previous: "" };
+  },
+});
+
+export const reserveBudget = internalMutation({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => {
+    const amount = Number(env.EMAIL_TRIAGE_MONTHLY_BUDGET_USD ?? "5");
+    if (!Number.isFinite(amount) || amount < 0 || amount > 1000) return false;
+    const month = new Date().toISOString().slice(0, 7);
+    const row = await ctx.db
+      .query("emailTriageBudget")
+      .withIndex("by_month", (q) => q.eq("month", month))
+      .unique();
+    const reservedCents = (row?.reservedCents ?? 0) + TRIAGE_RESERVATION_CENTS;
+    if (reservedCents > Math.floor(amount * 100)) return false;
+    if (row) await ctx.db.patch(row._id, { reservedCents });
+    else await ctx.db.insert("emailTriageBudget", { month, reservedCents });
+    return true;
+  },
+});
+
+export const list = query({
+  args: {
+    shopId: v.id("shops"),
+    bucket: triageBucket,
+    asOf: v.number(),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: v.object({
+    page: v.array(
+      v.object({
+        id: v.id("emailReceipts"),
+        from: v.string(),
+        subject: v.string(),
+        snippet: v.string(),
+        reason: v.string(),
+        manual: v.boolean(),
+        receivedAt: v.number(),
+      }),
+    ),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
+  }),
+  handler: async (ctx, { shopId, bucket, asOf, paginationOpts }) => {
+    await requireShopMembership(ctx, shopId);
+    const result = await ctx.db
+      .query("emailReceipts")
+      .withIndex("by_shopId_and_triage_bucket_and_receivedAt", (q) =>
+        q.eq("shopId", shopId).eq("triage.bucket", bucket),
+      )
+      .order("desc")
+      .paginate({ ...paginationOpts, numItems: Math.min(50, paginationOpts.numItems) });
+    const page = [];
+    for (const receipt of result.page) {
+      if (receipt.expiresAt <= asOf) continue;
+      const message = await ctx.db
+        .query("supportMessages")
+        .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
+        .first();
+      page.push({
+        id: receipt._id,
+        from: message?.from.address ?? receipt.envelopeFrom,
+        subject: message?.subject ?? "(sans objet)",
+        snippet: message?.snippet ?? "",
+        reason: receipt.triage?.reason ?? "unclear",
+        manual: receipt.triage?.source === "manual",
+        receivedAt: receipt.receivedAt,
+      });
+    }
+    return { page, isDone: result.isDone, continueCursor: result.continueCursor };
+  },
+});
+
+export const permissions = query({
+  args: { shopId: v.id("shops") },
+  returns: v.object({ canCorrect: v.boolean() }),
+  handler: async (ctx, { shopId }) => {
+    const { membership } = await requireShopMembership(ctx, shopId);
+    return { canCorrect: membership.role !== "viewer" };
+  },
+});
+
+export const reclassify = mutation({
+  args: {
+    receiptId: v.id("emailReceipts"),
+    bucket: v.union(v.literal("sav"), v.literal("review"), v.literal("other")),
+  },
+  returns: v.null(),
+  handler: async (ctx, { receiptId, bucket }) => {
+    const receipt = await ctx.db.get(receiptId);
+    if (!receipt || receipt.expiresAt <= Date.now()) throw new ConvexError("EmailUnavailable");
+    const { membership, profile } = await requireShopMembership(ctx, receipt.shopId);
+    if (membership.role === "viewer") throw new ConvexError("Forbidden");
+    if (receipt.status !== "processed" || !receipt.triage)
+      throw new ConvexError("EmailNotClassified");
+    if (receipt.triage.bucket === "setup") throw new ConvexError("ConnectionEmail");
+    const message = await ctx.db
+      .query("supportMessages")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
+      .unique();
+    const route = await ctx.db.get(receipt.routeId);
+    if (!message || !route) throw new ConvexError("EmailUnavailable");
+    const now = Date.now();
+    if (bucket === "sav" && !message.conversationId) {
+      const conversationId = await getOrCreateConversationId(ctx, {
+        route,
+        customerEmail: message.from.address,
+        subject: message.subject ?? null,
+        inReplyTo: message.inReplyTo ?? null,
+        references: message.references,
+        now,
+        receivedAt: message.receivedAt,
+      });
+      await ctx.db.patch(message._id, { conversationId, updatedAt: now });
+      const conversation = await ctx.db.get(conversationId);
+      await ctx.db.patch(conversationId, {
+        status: "open",
+        lastMessageAt: Math.max(conversation?.lastMessageAt ?? 0, message.receivedAt),
+        updatedAt: now,
+      });
+    } else if (bucket !== "sav" && message.conversationId) {
+      const conversationId = message.conversationId;
+      await ctx.db.patch(message._id, { conversationId: undefined, updatedAt: now });
+      const remaining = await ctx.db
+        .query("supportMessages")
+        .withIndex("by_conversationId_and_receivedAt", (q) =>
+          q.eq("conversationId", conversationId),
+        )
+        .order("desc")
+        .first();
+      if (!remaining) await ctx.db.delete(conversationId);
+      else
+        await ctx.db.patch(conversationId, {
+          lastMessageAt: remaining.receivedAt,
+          subject: remaining.subject,
+          customerEmail: remaining.from.address,
+          updatedAt: now,
+        });
+    }
+    await ctx.db.patch(receiptId, {
+      triage: { bucket, reason: "manual", source: "manual", version: TRIAGE_VERSION },
+      triageUpdatedAt: now,
+      triageUpdatedBy: profile._id,
+    });
+    return null;
+  },
+});

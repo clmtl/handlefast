@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { triageDecision } from "./emailTriagePolicy";
 
 export const receiptStatus = v.union(
   v.literal("uploading"),
@@ -25,6 +26,10 @@ export const receiptFields = {
   nextAttemptAt: v.number(),
   error: v.optional(v.string()),
   updatedAt: v.number(),
+  triage: v.optional(triageDecision),
+  automaticTriage: v.optional(triageDecision),
+  triageUpdatedAt: v.optional(v.number()),
+  triageUpdatedBy: v.optional(v.id("profiles")),
 };
 export const receiptDoc = v.object({
   _id: v.id("emailReceipts"),

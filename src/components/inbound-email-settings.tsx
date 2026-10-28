@@ -293,7 +293,7 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
   );
 }
 
-function EmailReader({ receiptId, close }: { receiptId: Id<"emailReceipts">; close: () => void }) {
+export function EmailReader({ receiptId, close }: { receiptId: Id<"emailReceipts">; close: () => void }) {
   const download = useAction(api.emailInbox.download);
   const [content, setContent] = useState<{
     email: Email;

@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { emailExpiresAt } from "./lib/emailPolicy";
+import { triageDecision } from "./lib/emailTriagePolicy";
 import { normalizeEmailAddress } from "./lib/inboundEmailRoutes";
 
 const maxBodyLength = 12_000;
@@ -52,10 +53,16 @@ export const ingestFromWorker = internalMutation({
     rawSize: v.number(),
     receiptId: v.optional(v.id("emailReceipts")),
     processingAttempt: v.optional(v.number()),
+    triage: v.optional(triageDecision),
   },
   returns: v.union(
     v.object({ status: v.literal("duplicate"), deliveryId: v.id("inboundEmailDeliveries") }),
     v.object({ status: v.literal("unmatched"), deliveryId: v.id("inboundEmailDeliveries") }),
+    v.object({
+      status: v.literal("filtered"),
+      deliveryId: v.id("inboundEmailDeliveries"),
+      supportMessageId: v.id("supportMessages"),
+    }),
     v.object({
       status: v.literal("received"),
       deliveryId: v.id("inboundEmailDeliveries"),
@@ -136,15 +143,19 @@ export const ingestFromWorker = internalMutation({
     const messageId = normalizeOptionalString(args.messageId);
     const inReplyTo = normalizeOptionalString(args.inReplyTo);
     const references = normalizeReferences(args.references);
-    const conversationId = await getOrCreateConversationId(ctx, {
-      customerEmail,
-      inReplyTo,
-      now,
-      receivedAt,
-      references,
-      route,
-      subject,
-    });
+    const decision = receipt?.triage?.source === "manual" ? receipt.triage : args.triage;
+    const conversationId =
+      !decision || decision.bucket === "sav"
+        ? await getOrCreateConversationId(ctx, {
+            customerEmail,
+            inReplyTo,
+            now,
+            receivedAt,
+            references,
+            route,
+            subject,
+          })
+        : undefined;
 
     const deliveryFields = {
       organizationId: route.organizationId,
@@ -219,15 +230,24 @@ export const ingestFromWorker = internalMutation({
       });
     }
 
-    const conversation = await ctx.db.get(conversationId);
-    await ctx.db.patch(conversationId, {
-      lastMessageAt: Math.max(conversation?.lastMessageAt ?? 0, receivedAt),
-      status: "open",
-      updatedAt: now,
-    });
+    if (conversationId) {
+      const conversation = await ctx.db.get(conversationId);
+      await ctx.db.patch(conversationId, {
+        lastMessageAt: Math.max(conversation?.lastMessageAt ?? 0, receivedAt),
+        status: "open",
+        updatedAt: now,
+      });
+    }
 
     if (receipt) {
-      await ctx.db.patch(receipt._id, { status: "processed", error: undefined, updatedAt: now });
+      await ctx.db.patch(receipt._id, {
+        status: "processed",
+        error: undefined,
+        updatedAt: now,
+        ...(decision
+          ? { triage: decision, automaticTriage: args.triage, triageUpdatedAt: now }
+          : {}),
+      });
     }
     await ctx.db.patch(route._id, {
       lastReceivedAt: Math.max(route.lastReceivedAt ?? 0, receivedAt),
@@ -252,6 +272,7 @@ export const ingestFromWorker = internalMutation({
       });
     }
 
+    if (!conversationId) return { status: "filtered" as const, deliveryId, supportMessageId };
     return {
       status: "received" as const,
       deliveryId,
@@ -261,7 +282,7 @@ export const ingestFromWorker = internalMutation({
   },
 });
 
-async function getOrCreateConversationId(
+export async function getOrCreateConversationId(
   ctx: MutationCtx,
   args: {
     route: Doc<"inboundEmailRoutes">;
