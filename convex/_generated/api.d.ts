@@ -14,6 +14,7 @@ import type * as emailInbox from "../emailInbox.js";
 import type * as emailProcessing from "../emailProcessing.js";
 import type * as emailReceipts from "../emailReceipts.js";
 import type * as emailRetention from "../emailRetention.js";
+import type * as emailTriage from "../emailTriage.js";
 import type * as http from "../http.js";
 import type * as inboundEmailRoutes from "../inboundEmailRoutes.js";
 import type * as inboundEmails from "../inboundEmails.js";
@@ -21,6 +22,8 @@ import type * as launchPreferences from "../launchPreferences.js";
 import type * as lib_authorization from "../lib/authorization.js";
 import type * as lib_emailPolicy from "../lib/emailPolicy.js";
 import type * as lib_emailReceiptValidators from "../lib/emailReceiptValidators.js";
+import type * as lib_emailTriageModel from "../lib/emailTriageModel.js";
+import type * as lib_emailTriagePolicy from "../lib/emailTriagePolicy.js";
 import type * as lib_inboundEmailRoutes from "../lib/inboundEmailRoutes.js";
 import type * as lib_slugs from "../lib/slugs.js";
 import type * as lib_webhookSignatures from "../lib/webhookSignatures.js";
@@ -42,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   emailProcessing: typeof emailProcessing;
   emailReceipts: typeof emailReceipts;
   emailRetention: typeof emailRetention;
+  emailTriage: typeof emailTriage;
   http: typeof http;
   inboundEmailRoutes: typeof inboundEmailRoutes;
   inboundEmails: typeof inboundEmails;
@@ -49,6 +53,8 @@ declare const fullApi: ApiFromModules<{
   "lib/authorization": typeof lib_authorization;
   "lib/emailPolicy": typeof lib_emailPolicy;
   "lib/emailReceiptValidators": typeof lib_emailReceiptValidators;
+  "lib/emailTriageModel": typeof lib_emailTriageModel;
+  "lib/emailTriagePolicy": typeof lib_emailTriagePolicy;
   "lib/inboundEmailRoutes": typeof lib_inboundEmailRoutes;
   "lib/slugs": typeof lib_slugs;
   "lib/webhookSignatures": typeof lib_webhookSignatures;
@@ -86,4 +92,5 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
 };

@@ -3,6 +3,7 @@ import { useQuery } from "convex/react";
 import { Inbox, LogOut, ShieldCheck, Store } from "lucide-react";
 import { useEffect } from "react";
 import { LoadingScreen, RequireAuth } from "@/components/auth-layout";
+import { EmailTriageInbox } from "@/components/email-triage-inbox";
 import { InboundEmailSettings } from "@/components/inbound-email-settings";
 import { authClient } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
@@ -78,6 +79,7 @@ function Dashboard() {
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-5 pb-10 md:px-8">
+        {shop && <EmailTriageInbox key={`triage:${shop._id}`} shopId={shop._id} />}
         {shop && <InboundEmailSettings key={shop._id} shopId={shop._id} />}
       </section>
     </main>

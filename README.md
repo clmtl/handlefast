@@ -69,3 +69,39 @@ VITE_SITE_URL=https://handlefast-staging.bk201li.workers.dev
 ```
 
 Use `npm run deploy:staging` for the Worker. For Convex, the local ignored `.env.deploy-staging` contains a deployment-scoped key: `npx convex deploy --env-file .env.deploy-staging`. Keep deploy keys and backend secrets out of Git. If the staging deployment is replaced, update both URLs and the email route before testing again.
+
+## SAV email filtering (feature 3)
+
+New receipts are classified before creating or reopening a support conversation.
+`emailReceipts.triage` stores the current decision; `automaticTriage` preserves the
+initial decision and manual corrections record the acting profile and timestamp.
+Non-SAV message previews and attachment metadata remain stored, with an optional
+`supportMessages.conversationId`; the complete original and 12-month retention
+remain available. Existing emails are not reclassified.
+
+- GPT-6 Luna via the Responses API, strict structured outputs, low reasoning,
+  no tools or retries. The Convex Agent component runs without a thread, history,
+  search or stored generations; OpenAI requests use `store: false`. This flag is
+  not a promise of Zero Data Retention at the provider.
+- High confidence is required: 0.80 for SAV, 0.95 for exclusions. Scores are model
+  estimates, not calibrated probabilities. Uncertainty, empty/attachment-only
+  emails, missing credentials, provider failures go to review.
+  If a long message was truncated, it cannot be automatically excluded.
+- Active connection challenges and Gmail forwarding confirmations bypass the AI
+  and remain accessible in the reception journal. Customer requests forwarding
+  automated notifications are evaluated as requests rather than excluded by headers.
+- Owner/admin/agent members can reclassify; viewers can read. Only SAV messages
+  belong to conversations. Removing the last SAV message removes its empty
+  conversation while preserving the original, preview and attachments.
+- Set `OPENAI_API_KEY` on Convex only. The application imposes no monthly spending
+  cap on this filter. Each call still has bounded input, a 1024-token output limit,
+  a 30-second timeout and no SDK retry. Long truncated bodies or subjects cannot
+  be automatically excluded. Filtered intermediate replies do not break threading
+  back to an earlier SAV message in the same shop.
+
+`npm test` covers classification guards, provider request parameters, fallback,
+permissions, manual correction, retention and existing reception behavior.
+Run `node scripts/smoke-email-triage.mjs` against an anonymous local backend with
+a test OpenAI key to evaluate the synthetic corpus through signed upload, storage
+and the scheduled action. It sends no emails and refuses non-local deployments.
+The script leaves synthetic fixtures locally and makes billable model requests.

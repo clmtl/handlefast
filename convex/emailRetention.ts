@@ -22,6 +22,7 @@ async function removeMessage(ctx: MutationCtx, messageId: Id<"supportMessages">)
   if (remaining) return;
   await ctx.db.delete(messageId);
   await ctx.db.delete(message.deliveryId);
+  if (!message.conversationId) return;
   const sibling = await ctx.db
     .query("supportMessages")
     .withIndex("by_conversationId_and_receivedAt", (q) =>

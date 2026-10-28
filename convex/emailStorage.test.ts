@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { emailExpiresAt, MAX_EMAIL_BYTES, RAW_EMAIL_CONTENT_TYPE } from "./lib/emailPolicy";
+import { classifyWithLuna } from "./lib/emailTriageModel";
 import { signWebhookBody } from "./lib/webhookSignatures";
 import schema from "./schema";
 
@@ -23,6 +24,15 @@ async function storeTestBlob(
   await mockDb.patch(id, { contentType: blob.type });
   return id;
 }
+
+vi.mock("./lib/emailTriageModel", () => ({
+  classifyWithLuna: vi.fn(async () => ({
+    bucket: "sav",
+    reason: "post_purchase",
+    source: "ai",
+    version: 1,
+  })),
+}));
 
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 const issuer = "https://handlefast-test.convex.site";
@@ -129,6 +139,13 @@ function inboundPayload(
 }
 
 beforeEach(() => {
+  vi.mocked(classifyWithLuna).mockResolvedValue({
+    bucket: "sav",
+    reason: "post_purchase",
+    source: "ai",
+    version: 1,
+  });
+  vi.stubEnv("OPENAI_API_KEY", "synthetic-test-key");
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
 });
@@ -193,6 +210,53 @@ async function complete(f: Awaited<ReturnType<typeof prepare>>) {
 }
 
 describe("durable email storage", () => {
+  test("a truncated subject cannot hide a SAV request behind an advertising prefix", async () => {
+    vi.mocked(classifyWithLuna).mockResolvedValueOnce({
+      bucket: "other",
+      reason: "promotion",
+      source: "ai",
+      version: 1,
+    });
+    const subject = `${"Promotion ".repeat(60)}My order arrived broken; please help`;
+    const f = await prepare(rawMime.replace("Subject: Photo of my order", `Subject: ${subject}`));
+    await complete(f);
+    expect(await f.t.run((ctx) => ctx.db.get(f.receiptId))).toMatchObject({
+      status: "processed",
+      triage: { bucket: "review", reason: "too_long" },
+    });
+  });
+  test("retention also deletes classified non-SAV content without a conversation", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const f = await prepare();
+    await complete(f);
+    await f.t.run((ctx) => ctx.db.patch(f.receiptId, { expiresAt: Date.now() - 1 }));
+    await f.t.mutation(internal.emailRetention.expireReceipt, { receiptId: f.receiptId });
+    expect(await f.t.run((ctx) => ctx.db.get(f.receiptId))).toBeNull();
+    expect(await f.t.run((ctx) => ctx.db.query("supportMessages").first())).toBeNull();
+    expect(await f.t.run((ctx) => ctx.db.query("emailAttachments").first())).toBeNull();
+    expect(await f.t.run((ctx) => ctx.storage.get(f.storageId))).toBeNull();
+  });
+  test("AI failure preserves the original and routes to review without creating a SAV conversation", async () => {
+    vi.mocked(classifyWithLuna).mockRejectedValueOnce(new Error("Synthetic provider failure"));
+    const f = await prepare();
+    await complete(f);
+    expect(await f.t.run((ctx) => ctx.db.get(f.receiptId))).toMatchObject({
+      status: "processed",
+      rawStorageId: f.storageId,
+      triage: { bucket: "review", reason: "unavailable" },
+    });
+    expect(await f.t.run((ctx) => ctx.db.query("supportConversations").first())).toBeNull();
+  });
+
+  test("missing provider credentials leave received mail available for review", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const f = await prepare();
+    await complete(f);
+    expect(await f.t.run((ctx) => ctx.db.get(f.receiptId))).toMatchObject({
+      status: "processed",
+      triage: { bucket: "review", reason: "unavailable" },
+    });
+  });
   test("uses receipt time for a conversation first processed after an outage", async () => {
     const f = await prepare();
     const receivedAt = Date.now();

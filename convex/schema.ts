@@ -50,6 +50,7 @@ export default defineSchema({
     .index("by_rawStorageId", ["rawStorageId"])
     .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
     .index("by_shopId_and_receivedAt", ["shopId", "receivedAt"])
+    .index("by_shopId_and_triage_bucket_and_receivedAt", ["shopId", "triage.bucket", "receivedAt"])
     .index("by_expiresAt", ["expiresAt"]),
   emailMaintenance: defineTable({ key: v.string(), cursor: v.union(v.string(), v.null()) }).index(
     "by_key",
@@ -196,7 +197,7 @@ export default defineSchema({
   supportMessages: defineTable({
     organizationId: v.id("organizations"),
     shopId: v.id("shops"),
-    conversationId: v.id("supportConversations"),
+    conversationId: v.optional(v.id("supportConversations")),
     routeId: v.id("inboundEmailRoutes"),
     deliveryId: v.id("inboundEmailDeliveries"),
     receiptId: v.optional(v.id("emailReceipts")),
