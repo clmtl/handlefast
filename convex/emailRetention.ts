@@ -65,6 +65,11 @@ export const expireReceipt = internalMutation({
       .unique();
     if (delivery) await ctx.db.delete(delivery._id);
     if (receipt.rawStorageId) await ctx.storage.delete(receipt.rawStorageId);
+    const orderLink = await ctx.db
+      .query("orderLinks")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
+      .unique();
+    if (orderLink) await ctx.db.delete(orderLink._id);
     await ctx.db.delete(receiptId);
     return null;
   },

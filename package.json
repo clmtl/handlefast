@@ -16,6 +16,8 @@
     "lint": "biome lint .",
     "check": "biome check .",
     "test": "vitest run",
+    "test:shopify-connect": "node --test scripts/test-shopify-connector.mjs",
+    "smoke:commerce": "node scripts/smoke-commerce.mjs",
     "typecheck": "tsc --noEmit",
     "ui:add": "shadcn add",
     "build:staging": "CLOUDFLARE_ENV=staging vite build --mode staging",

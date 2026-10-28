@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { connectionFields, orderFields, shipmentFields } from "./lib/commerceModel";
 import { receiptFields } from "./lib/emailReceiptValidators";
 
 export const roleValidator = v.union(
@@ -44,6 +45,43 @@ const inboundEmailHeaderValidator = v.object({
 });
 
 export default defineSchema({
+  shopifyConnections: defineTable(connectionFields)
+    .index("by_shopId", ["shopId"])
+    .index("by_domain", ["domain"])
+    .index("by_clientId", ["clientId"])
+    .index("by_status_and_nextSyncAt", ["status", "nextSyncAt"]),
+  shopifyPairings: defineTable({
+    shopId: v.id("shops"),
+    organizationId: v.id("organizations"),
+    profileId: v.id("profiles"),
+    domain: v.string(),
+    tokenHash: v.string(),
+    expiresAt: v.number(),
+    consumedAt: v.optional(v.number()),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_shopId", ["shopId"])
+    .index("by_expiresAt", ["expiresAt"]),
+  shopifyOrders: defineTable(orderFields)
+    .index("by_shopId_and_gid", ["shopId", "gid"])
+    .index("by_shopId_and_email", ["shopId", "email"])
+    .index("by_shopId_and_generation_and_email", ["shopId", "generation", "email"])
+    .index("by_connectionId", ["connectionId"])
+    .index("by_placedAt", ["placedAt"]),
+  orderLinks: defineTable({
+    receiptId: v.id("emailReceipts"),
+    shopId: v.id("shops"),
+    orderId: v.union(v.id("shopifyOrders"), v.null()),
+    profileId: v.id("profiles"),
+    updatedAt: v.number(),
+  })
+    .index("by_receiptId", ["receiptId"])
+    .index("by_orderId", ["orderId"]),
+  orderShipments: defineTable(shipmentFields)
+    .index("by_orderId", ["orderId"])
+    .index("by_number", ["number"])
+    .index("by_connectionId", ["connectionId"])
+    .index("by_active_and_nextAttemptAt", ["active", "nextAttemptAt"]),
   emailReceipts: defineTable(receiptFields)
     .index("by_key", ["key"])
     .index("by_sha256_and_status", ["sha256", "status"])

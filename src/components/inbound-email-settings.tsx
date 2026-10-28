@@ -3,6 +3,7 @@ import PostalMime, { type Email } from "postal-mime";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { OrderContext } from "./order-context";
 
 const button =
   "rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
@@ -293,7 +294,13 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
   );
 }
 
-export function EmailReader({ receiptId, close }: { receiptId: Id<"emailReceipts">; close: () => void }) {
+export function EmailReader({
+  receiptId,
+  close,
+}: {
+  receiptId: Id<"emailReceipts">;
+  close: () => void;
+}) {
   const download = useAction(api.emailInbox.download);
   const [content, setContent] = useState<{
     email: Email;
@@ -349,90 +356,95 @@ export function EmailReader({ receiptId, close }: { receiptId: Id<"emailReceipts
       ].slice(0, 30)
     : [];
   return (
-    <section className="rounded-lg border bg-card p-5" aria-label="Email content">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="break-words text-lg font-semibold">{email?.subject ?? "Opening email…"}</h2>
-        <button className={button} type="button" onClick={close}>
-          Close
-        </button>
-      </div>
-      {error && (
-        <p className="mt-4 text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      )}
-      {rawFile && !content && (
-        <button
-          className={`${button} mt-3`}
-          type="button"
-          onClick={() => saveFile(new Blob([rawFile], { type: "message/rfc822" }), "email.eml")}
-        >
-          Download original email
-        </button>
-      )}
-      {content && email && (
-        <>
-          <p className="mt-2 break-all text-sm text-muted-foreground">
-            From: {email.from?.address}
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <section className="min-w-0 rounded-lg border bg-card p-5" aria-label="Email content">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="break-words text-lg font-semibold">
+            {email?.subject ?? "Opening email…"}
+          </h2>
+          <button className={button} type="button" onClick={close}>
+            Close
+          </button>
+        </div>
+        {error && (
+          <p className="mt-4 text-sm text-destructive" role="alert">
+            {error}
           </p>
-          <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-4 font-sans text-sm leading-6">
-            {email.text ?? email.html?.replace(/<[^>]*>/g, " ") ?? "No text content."}
-          </pre>
-          {links.length > 0 && (
-            <div className="mt-4">
-              <h3 className="font-medium">Links in this email</h3>
-              <ul className="mt-2 space-y-2">
-                {links.map((link) => (
-                  <li key={link}>
-                    <a
-                      className="break-all text-sm text-primary underline"
-                      href={link}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {link}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button
-              className={button}
-              type="button"
-              onClick={() =>
-                saveFile(new Blob([content.raw], { type: "message/rfc822" }), "email.eml")
-              }
-            >
-              Download original email
-            </button>
-            {email.attachments.map((attachment, index) => (
+        )}
+        {rawFile && !content && (
+          <button
+            className={`${button} mt-3`}
+            type="button"
+            onClick={() => saveFile(new Blob([rawFile], { type: "message/rfc822" }), "email.eml")}
+          >
+            Download original email
+          </button>
+        )}
+        {content && email && (
+          <>
+            <p className="mt-2 break-all text-sm text-muted-foreground">
+              From: {email.from?.address}
+            </p>
+            <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-4 font-sans text-sm leading-6">
+              {email.text ?? email.html?.replace(/<[^>]*>/g, " ") ?? "No text content."}
+            </pre>
+            {links.length > 0 && (
+              <div className="mt-4">
+                <h3 className="font-medium">Links in this email</h3>
+                <ul className="mt-2 space-y-2">
+                  {links.map((link) => (
+                    <li key={link}>
+                      <a
+                        className="break-all text-sm text-primary underline"
+                        href={link}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {link}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap gap-2">
               <button
                 className={button}
                 type="button"
-                key={content.attachmentIds[index]}
                 onClick={() =>
-                  saveFile(
-                    new Blob(
-                      [
-                        attachment.content instanceof Uint8Array
-                          ? new Uint8Array(attachment.content).buffer
-                          : attachment.content,
-                      ],
-                      { type: "application/octet-stream" },
-                    ),
-                    attachment.filename ?? `attachment-${index + 1}`,
-                  )
+                  saveFile(new Blob([content.raw], { type: "message/rfc822" }), "email.eml")
                 }
               >
-                Download {attachment.filename ?? `attachment ${index + 1}`}
+                Download original email
               </button>
-            ))}
-          </div>
-        </>
-      )}
-    </section>
+              {email.attachments.map((attachment, index) => (
+                <button
+                  className={button}
+                  type="button"
+                  key={content.attachmentIds[index]}
+                  onClick={() =>
+                    saveFile(
+                      new Blob(
+                        [
+                          attachment.content instanceof Uint8Array
+                            ? new Uint8Array(attachment.content).buffer
+                            : attachment.content,
+                        ],
+                        { type: "application/octet-stream" },
+                      ),
+                      attachment.filename ?? `attachment-${index + 1}`,
+                    )
+                  }
+                >
+                  Download {attachment.filename ?? `attachment ${index + 1}`}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+      <OrderContext receiptId={receiptId} />
+    </div>
   );
 }
 

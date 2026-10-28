@@ -12,6 +12,8 @@ const app = defineApp({
     RESEND_API_KEY: v.optional(v.string()),
     SITE_URL: v.string(),
     OPENAI_API_KEY: v.optional(v.string()),
+    COMMERCE_ENCRYPTION_KEY: v.optional(v.string()),
+    TRACK17_API_KEY: v.optional(v.string()),
   },
 });
 
