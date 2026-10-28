@@ -46,8 +46,8 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
           <div>
             <h1 className="text-2xl font-semibold">Connect your support inbox</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Emails and attachments up to 25 MiB. Originals are automatically deleted after 12
-              months.
+              Up to 25 MiB per complete email, including encoded attachments. Originals are
+              automatically deleted after 12 months.
             </p>
           </div>
           <span className="rounded-full border px-3 py-1 text-sm font-medium">
@@ -111,7 +111,8 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
                 In Gmail: Settings → See all settings → Forwarding and POP/IMAP → Add a forwarding
                 address. Enter the address above. Keep a copy in your existing inbox. Open the
                 confirmation email below and follow its verification link, then enable forwarding in
-                Gmail.
+                Gmail. Gmail does not forward spam: check its Spam folder if a test email does not
+                arrive.
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
                 For Outlook or another provider, use its forwarding settings. If forwarding is
