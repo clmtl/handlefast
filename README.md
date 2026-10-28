@@ -2,7 +2,7 @@
 
 ## Inbound support email (feature 2)
 
-Implemented on `feature/inbound-email-routing` and deployed to the dedicated staging environment. Real Gmail forwarding, attachment integrity, threading, pause/resume, size limits and outage recovery passed acceptance. Feature 2 is checked in `FEATURES.md`; the feature PR is ready for review into `staging`, before any production promotion.
+Implemented on `feature/inbound-email-routing` and deployed to the dedicated staging environment. Real Gmail forwarding, attachment integrity, threading, pause/resume, size limits and outage recovery passed acceptance. Feature 2 is checked in `FEATURES.md`; the integration target is `staging`, before any production promotion.
 
 ### Behavior
 

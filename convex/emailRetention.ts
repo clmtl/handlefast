@@ -24,7 +24,7 @@ async function removeMessage(ctx: MutationCtx, messageId: Id<"supportMessages">)
   await ctx.db.delete(message.deliveryId);
   const sibling = await ctx.db
     .query("supportMessages")
-    .withIndex("by_conversationId_and_createdAt", (q) =>
+    .withIndex("by_conversationId_and_receivedAt", (q) =>
       q.eq("conversationId", message.conversationId),
     )
     .order("desc")

@@ -193,6 +193,15 @@ async function complete(f: Awaited<ReturnType<typeof prepare>>) {
 }
 
 describe("durable email storage", () => {
+  test("uses receipt time for a conversation first processed after an outage", async () => {
+    const f = await prepare();
+    const receivedAt = Date.now();
+    vi.setSystemTime(receivedAt + 60 * 60 * 1000);
+    await complete(f);
+    const conversation = await f.t.run((ctx) => ctx.db.query("supportConversations").first());
+    expect(conversation?.lastMessageAt).toBe(receivedAt);
+  });
+
   test("preserves the entire MIME original and attachment bytes before processing", async () => {
     const f = await prepare();
     await complete(f);
@@ -439,6 +448,69 @@ describe("durable email storage", () => {
     expect(emailExpiresAt(Date.parse("2024-02-29T12:00:00Z"))).toBe(
       Date.parse("2025-02-28T12:00:00Z"),
     );
+  });
+
+  test("retention keeps the most recently received reply even when an older reply was processed later", async () => {
+    const f = await prepare();
+    const start = Date.now();
+    await complete(f);
+    vi.setSystemTime(start + 2 * 86400000);
+    const newest = await f.t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(f.route.address, {
+        deliveryKey: "newest-received",
+        messageId: "<newest@example.com>",
+        inReplyTo: "<storage-test@example.com>",
+        subject: "Most recently received",
+      }),
+    );
+    vi.setSystemTime(start + 3 * 86400000);
+    const delayed = await f.t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(f.route.address, {
+        deliveryKey: "delayed-reply",
+        messageId: "<delayed@example.com>",
+        inReplyTo: "<storage-test@example.com>",
+        subject: "Older reply processed later",
+      }),
+    );
+    if (newest.status !== "received" || delayed.status !== "received")
+      throw new Error("Expected replies");
+    await f.t.run((ctx) =>
+      ctx.db.patch(delayed.supportMessageId, {
+        receivedAt: start + 86400000,
+        expiresAt: emailExpiresAt(start + 86400000),
+      }),
+    );
+    vi.setSystemTime(emailExpiresAt(start));
+    await f.t.mutation(internal.emailRetention.expireReceipt, { receiptId: f.receiptId });
+    expect(await f.t.run((ctx) => ctx.db.get(newest.conversationId))).toMatchObject({
+      subject: "Most recently received",
+      lastMessageAt: start + 2 * 86400000,
+    });
+  });
+
+  test("stops reading an oversized webhook stream without Content-Length", async () => {
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    const t = createTestBackend();
+    let chunksRead = 0;
+    const cancel = vi.fn();
+    const body = new ReadableStream(
+      {
+        pull(controller) {
+          chunksRead += 1;
+          controller.enqueue(new Uint8Array(8192));
+          if (chunksRead === 20) controller.close();
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    );
+    const init: RequestInit & { duplex: "half" } = { method: "POST", body, duplex: "half" };
+    const response = await t.fetch("/webhooks/cloudflare/email-routing", init);
+    expect(response.status).toBe(413);
+    expect(chunksRead).toBeLessThan(20);
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   test("forbids cross-shop reads, downloads, retries and connection changes", async () => {

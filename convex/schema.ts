@@ -222,6 +222,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
+    .index("by_conversationId_and_receivedAt", ["conversationId", "receivedAt"])
     .index("by_shopId_and_createdAt", ["shopId", "createdAt"])
     .index("by_deliveryId", ["deliveryId"])
     .index("by_receiptId", ["receiptId"])

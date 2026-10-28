@@ -44,3 +44,25 @@ the shop's HandleFast address. Production was not modified.
   TypeScript, Biome lint and a staging production build after the setup-copy fix.
 
 All acceptance scenarios above passed. The feature is ready for review into `staging`; this is not a production-release approval.
+
+## PR review follow-up (2026-10-28)
+
+Manual review covered tenant authorization, signed ingress, durable storage,
+retry/retention, threading, the reader and deployment configuration. No external
+review agent was used.
+
+Two findings were fixed before integration:
+
+- Delayed processing initialized conversation activity with processing time;
+  retention also chose the latest processed sibling instead of the latest
+  received one. Both now use server receipt time, with a matching compound index.
+- A webhook without Content-Length could force the endpoint to buffer the whole
+  request before rejecting it. The endpoint now counts streamed bytes and cancels
+  reading as soon as the 16 KiB metadata limit is exceeded.
+
+Three regression tests reproduced those failures before the fixes. All **62 tests**,
+TypeScript, Biome lint and the staging production build pass afterward. Convex
+staging deployment succeeded with the new index. A real signed streaming request
+with a UTF-8 character split across chunks successfully completed upload and
+scheduled processing; conversation activity exactly matched receipt time. A
+streamed oversized request without Content-Length returned HTTP 413.

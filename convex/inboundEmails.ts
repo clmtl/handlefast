@@ -140,6 +140,7 @@ export const ingestFromWorker = internalMutation({
       customerEmail,
       inReplyTo,
       now,
+      receivedAt,
       references,
       route,
       subject,
@@ -269,6 +270,7 @@ async function getOrCreateConversationId(
     inReplyTo: string | null;
     references: string[];
     now: number;
+    receivedAt: number;
   },
 ) {
   const referencedMessageId = await getConversationIdByReferences(ctx, args.route.shopId, [
@@ -287,7 +289,7 @@ async function getOrCreateConversationId(
     customerEmail: args.customerEmail,
     ...(args.subject ? { subject: args.subject } : {}),
     status: "open",
-    lastMessageAt: args.now,
+    lastMessageAt: args.receivedAt,
     createdAt: args.now,
     updatedAt: args.now,
   });
