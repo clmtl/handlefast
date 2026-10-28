@@ -210,6 +210,21 @@ async function complete(f: Awaited<ReturnType<typeof prepare>>) {
 }
 
 describe("durable email storage", () => {
+  test("a truncated subject cannot hide a SAV request behind an advertising prefix", async () => {
+    vi.mocked(classifyWithLuna).mockResolvedValueOnce({
+      bucket: "other",
+      reason: "promotion",
+      source: "ai",
+      version: 1,
+    });
+    const subject = `${"Promotion ".repeat(60)}My order arrived broken; please help`;
+    const f = await prepare(rawMime.replace("Subject: Photo of my order", `Subject: ${subject}`));
+    await complete(f);
+    expect(await f.t.run((ctx) => ctx.db.get(f.receiptId))).toMatchObject({
+      status: "processed",
+      triage: { bucket: "review", reason: "too_long" },
+    });
+  });
   test("retention also deletes classified non-SAV content without a conversation", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const f = await prepare();
@@ -231,18 +246,6 @@ describe("durable email storage", () => {
       triage: { bucket: "review", reason: "unavailable" },
     });
     expect(await f.t.run((ctx) => ctx.db.query("supportConversations").first())).toBeNull();
-  });
-
-  test("budget exhaustion keeps incoming mail in review without calling the model", async () => {
-    vi.stubEnv("EMAIL_TRIAGE_MONTHLY_BUDGET_USD", "0");
-    vi.mocked(classifyWithLuna).mockClear();
-    const f = await prepare();
-    await complete(f);
-    expect(await f.t.run((ctx) => ctx.db.get(f.receiptId))).toMatchObject({
-      status: "processed",
-      triage: { bucket: "review", reason: "budget" },
-    });
-    expect(classifyWithLuna).not.toHaveBeenCalled();
   });
 
   test("missing provider credentials leave received mail available for review", async () => {

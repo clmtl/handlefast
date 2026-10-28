@@ -6,11 +6,11 @@ Model: `gpt-6-luna`, Responses API, structured output, low reasoning.
 ## Automated checks
 
 - 76 tests pass, including the 62 existing tests. Added coverage for exclusion
-  guards, SDK request parameters, no unbudgeted retries, missing credentials,
-  provider failure, budget exhaustion, role/shop authorization, manual
+  guards, SDK request parameters, no automatic SDK retries, missing credentials,
+  provider failure, role/shop authorization, manual
   corrections, preserved originals/attachments and non-SAV retention.
 - TypeScript, Biome lint, staging frontend/server build and Convex deployment pass.
-- 16 synthetic examples passed through the actual signed reserve/upload/complete
+- 17 synthetic examples passed through the actual signed reserve/upload/complete
   webhook, stored originals, scheduled parsing and real Luna requests on both
   the anonymous local deployment and the staging backend.
 
@@ -18,14 +18,14 @@ Model: `gpt-6-luna`, Responses API, structured output, low reasoning.
 | --- | --- | --- |
 | Late delivery (French), wrong item/refund (English), return (Spanish), warranty (German), missing order number, customer forwarding an automated notification, injected instructions alongside an actual damaged order | SAV | 7/7 |
 | Pre-purchase question, newsletter, marketing pitch, automated order confirmation, wholesale vendor catalog | Hors SAV | 5/5 |
-| Vague request, empty email, thanks without context, long advertising prefix hiding a support request beyond the excerpt | À vérifier | 4/4 |
+| Vague request, empty email, thanks without context, long advertising prefix hiding a support request beyond the excerpt, long subject hiding a support request | À vérifier | 5/5 |
 
 This small synthetic corpus is a regression check, not a measured production
 accuracy rate. Actual customer traffic still needs monitoring.
 
 ## Staging UI
 
-Worker version: `0b4c5a29-48cb-4b01-9f51-e0e4e3ee2605`.
+Worker version: `f02d7d9f-3dd2-4f10-a495-606ca85fbd31`.
 Backend: `frugal-gecko-721` (preview/staging).
 The existing authenticated session opened the dashboard successfully. Three
 clearly marked `HF-QA filtre SAV` synthetic messages were uploaded to the test
@@ -42,8 +42,16 @@ shop through the signed protocol. No email was sent.
 The three HF-QA messages remain in the test shop. The separate synthetic smoke
 workspace also remains in staging, isolated by membership. Existing emails were
 not reclassified. The OpenAI key is configured on the staging backend only and
-was never committed or exposed to the browser. The application allowance is
-5 USD/month across all shops, conservatively reserving one cent per request.
+was never committed or exposed to the browser. The application has no monthly
+spending cap for the filter.
+
+## Review before merge
+
+No monthly allowance or reservation counter gates model calls. Regression
+tests reproduce and fix two additional issues: a filtered intermediate reply
+hiding an older SAV thread reference, and a long subject hiding a support
+request beyond the AI excerpt. The complete 17-case corpus passes locally and
+on staging. Both regression tests failed before the fixes and pass afterward.
 
 ## Scope
 

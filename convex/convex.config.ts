@@ -12,7 +12,6 @@ const app = defineApp({
     RESEND_API_KEY: v.optional(v.string()),
     SITE_URL: v.string(),
     OPENAI_API_KEY: v.optional(v.string()),
-    EMAIL_TRIAGE_MONTHLY_BUDGET_USD: v.optional(v.string()),
   },
 });
 

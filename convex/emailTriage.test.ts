@@ -2,7 +2,7 @@
 import betterAuthTest from "@convex-dev/better-auth/test";
 import type { UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { api, components, internal } from "./_generated/api";
 import { guardedDecision, reviewDecision, TRIAGE_VERSION } from "./lib/emailTriagePolicy";
 import schema from "./schema";
@@ -79,8 +79,6 @@ async function createWorkspace(t: ReturnType<typeof createTestBackend>, seed: st
   };
 }
 
-afterEach(() => vi.unstubAllEnvs());
-
 async function fixture(bucket: "sav" | "review" | "other" = "review") {
   const t = createTestBackend();
   const workspace = await createWorkspace(t, "triage");
@@ -132,6 +130,32 @@ async function fixture(bucket: "sav" | "review" | "other" = "review") {
 }
 
 describe("SAV triage", () => {
+  test("a filtered intermediate reply does not split a later SAV response from its conversation", async () => {
+    const f = await fixture("sav");
+    if (f.result.status !== "received") throw new Error("Expected SAV");
+    const conversationId = f.result.conversationId;
+    await f.t.mutation(internal.inboundEmails.ingestFromWorker, {
+      ...f.payload,
+      receiptId: undefined,
+      processingAttempt: undefined,
+      deliveryKey: "filtered-middle",
+      messageId: "<middle@example.com>",
+      inReplyTo: "<first@example.com>",
+      triage: reviewDecision("unclear"),
+    });
+    const reply = await f.t.mutation(internal.inboundEmails.ingestFromWorker, {
+      ...f.payload,
+      receiptId: undefined,
+      processingAttempt: undefined,
+      deliveryKey: "later-sav",
+      messageId: "<later@example.com>",
+      inReplyTo: "<middle@example.com>",
+      references: ["<first@example.com>", "<middle@example.com>"],
+    });
+    expect(reply.status).toBe("received");
+    if (reply.status === "received") expect(reply.conversationId).toBe(conversationId);
+    expect(await f.t.run((ctx) => ctx.db.query("supportConversations").take(10))).toHaveLength(1);
+  });
   test("retains non-SAV message and attachments without creating a conversation; retries are idempotent", async () => {
     const f = await fixture("other");
     expect(f.result.status).toBe("filtered");
@@ -273,16 +297,6 @@ describe("SAV triage", () => {
         bucket: "sav",
       }),
     ).rejects.toThrow("ConnectionEmail");
-  });
-
-  test("budget reservations enforce a global monthly limit and fail closed for bad configuration", async () => {
-    const t = createTestBackend();
-    vi.stubEnv("EMAIL_TRIAGE_MONTHLY_BUDGET_USD", "0.02");
-    expect(await t.mutation(internal.emailTriage.reserveBudget, {})).toBe(true);
-    expect(await t.mutation(internal.emailTriage.reserveBudget, {})).toBe(true);
-    expect(await t.mutation(internal.emailTriage.reserveBudget, {})).toBe(false);
-    vi.stubEnv("EMAIL_TRIAGE_MONTHLY_BUDGET_USD", "invalid");
-    expect(await t.mutation(internal.emailTriage.reserveBudget, {})).toBe(false);
   });
 
   test("uncertain or contradictory model outputs always go to review", () => {

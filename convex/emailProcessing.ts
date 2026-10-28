@@ -51,8 +51,6 @@ export const process = internalAction({
         else if (env.OPENAI_API_KEY) {
           const prompt = `${triagePrompt(payload)}\nPrevious message (untrusted context only): ${context.previous}`;
           if (new TextEncoder().encode(prompt).length > 24_000) triage = reviewDecision("too_long");
-          else if (!(await ctx.runMutation(internal.emailTriage.reserveBudget, {})))
-            triage = reviewDecision("budget");
           else {
             try {
               triage = await classifyWithLuna(ctx, env.OPENAI_API_KEY, prompt, receiptId);
@@ -64,7 +62,11 @@ export const process = internalAction({
               triage = reviewDecision("unavailable");
             }
             // Never discard content that was omitted from the bounded AI prompt.
-            if (triage.bucket === "other" && (payload.text || payload.html || "").length > 5000)
+            if (
+              triage.bucket === "other" &&
+              ((payload.text || payload.html || "").length > 5000 ||
+                (payload.subject?.length ?? 0) > 500)
+            )
               triage = reviewDecision("too_long");
           }
         }

@@ -53,7 +53,7 @@ test("stateless Luna classification requests structured output, low reasoning an
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
-test("provider failures cannot cause unbudgeted automatic SDK retries", async () => {
+test("provider failures do not cause automatic SDK retries", async () => {
   const fetchMock = vi.fn(async () =>
     Response.json(
       {

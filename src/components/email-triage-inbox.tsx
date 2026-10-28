@@ -13,7 +13,6 @@ const reasons: Record<string, string> = {
   unclear: "Contexte insuffisant ou classement incertain",
   manual: "Classement corrigé manuellement",
   unavailable: "Tri automatique indisponible : vérification nécessaire",
-  budget: "Plafond du tri automatique atteint",
   empty: "Message vide ou composé uniquement de pièces jointes",
   too_long: "Message long : vérification nécessaire",
 };

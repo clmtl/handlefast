@@ -1,9 +1,9 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
-import { env, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { getOrCreateConversationId } from "./inboundEmails";
 import { requireShopMembership } from "./lib/authorization";
-import { TRIAGE_RESERVATION_CENTS, TRIAGE_VERSION, triageBucket } from "./lib/emailTriagePolicy";
+import { TRIAGE_VERSION, triageBucket } from "./lib/emailTriagePolicy";
 
 export const context = internalQuery({
   args: {
@@ -54,25 +54,6 @@ export const context = internalQuery({
       }
     }
     return { setup, previous: "" };
-  },
-});
-
-export const reserveBudget = internalMutation({
-  args: {},
-  returns: v.boolean(),
-  handler: async (ctx) => {
-    const amount = Number(env.EMAIL_TRIAGE_MONTHLY_BUDGET_USD ?? "5");
-    if (!Number.isFinite(amount) || amount < 0 || amount > 1000) return false;
-    const month = new Date().toISOString().slice(0, 7);
-    const row = await ctx.db
-      .query("emailTriageBudget")
-      .withIndex("by_month", (q) => q.eq("month", month))
-      .unique();
-    const reservedCents = (row?.reservedCents ?? 0) + TRIAGE_RESERVATION_CENTS;
-    if (reservedCents > Math.floor(amount * 100)) return false;
-    if (row) await ctx.db.patch(row._id, { reservedCents });
-    else await ctx.db.insert("emailTriageBudget", { month, reservedCents });
-    return true;
   },
 });
 

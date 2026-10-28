@@ -177,6 +177,12 @@ const cases = [
     `${"Advertising. ".repeat(500)}My order arrived broken. Please help me return it.`,
     "review",
   ],
+  [
+    "long-subject-request",
+    `${"Advertising. ".repeat(60)}My order arrived broken. Please help me return it.`,
+    "Browse our catalog and offers.",
+    "review",
+  ],
 ];
 async function evaluate([name, subject, text, expected]) {
   const raw = Buffer.from(

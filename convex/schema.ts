@@ -44,10 +44,6 @@ const inboundEmailHeaderValidator = v.object({
 });
 
 export default defineSchema({
-  emailTriageBudget: defineTable({ month: v.string(), reservedCents: v.number() }).index(
-    "by_month",
-    ["month"],
-  ),
   emailReceipts: defineTable(receiptFields)
     .index("by_key", ["key"])
     .index("by_sha256_and_status", ["sha256", "status"])

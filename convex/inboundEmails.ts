@@ -334,7 +334,7 @@ async function getConversationIdByReferences(
       .take(1);
     const referencedMessage = referencedMessages[0];
 
-    if (referencedMessage?.shopId === shopId) {
+    if (referencedMessage?.shopId === shopId && referencedMessage.conversationId) {
       return referencedMessage.conversationId;
     }
   }

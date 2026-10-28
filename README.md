@@ -85,7 +85,7 @@ remain available. Existing emails are not reclassified.
   not a promise of Zero Data Retention at the provider.
 - High confidence is required: 0.80 for SAV, 0.95 for exclusions. Scores are model
   estimates, not calibrated probabilities. Uncertainty, empty/attachment-only
-  emails, missing credentials, provider failures and budget exhaustion go to review.
+  emails, missing credentials, provider failures go to review.
   If a long message was truncated, it cannot be automatically excluded.
 - Active connection challenges and Gmail forwarding confirmations bypass the AI
   and remain accessible in the reception journal. Customer requests forwarding
@@ -93,15 +93,11 @@ remain available. Existing emails are not reclassified.
 - Owner/admin/agent members can reclassify; viewers can read. Only SAV messages
   belong to conversations. Removing the last SAV message removes its empty
   conversation while preserving the original, preview and attachments.
-- Set `OPENAI_API_KEY` on Convex only. `EMAIL_TRIAGE_MONTHLY_BUDGET_USD` defaults
-  to 5 across all shops, with UTC calendar-month accounting. Every attempt reserves
-  one cent transactionally, even on failure. Input is bounded (24 KB prompt plus
-  fixed instructions/schema), output is capped at 1024 tokens, with one request
-  and Standard service tier. At the verified 2026-10-28 rates this reservation
-  exceeds the maximum request charge, limiting the default to 500 attempts/month.
-  This conservative application allowance is not an OpenAI billing account limit;
-  unrelated API use is not included. Review pricing before changing the model,
-  tier, prompt/token limits or rates. Set the allowance to 0 to disable AI calls.
+- Set `OPENAI_API_KEY` on Convex only. The application imposes no monthly spending
+  cap on this filter. Each call still has bounded input, a 1024-token output limit,
+  a 30-second timeout and no SDK retry. Long truncated bodies or subjects cannot
+  be automatically excluded. Filtered intermediate replies do not break threading
+  back to an earlier SAV message in the same shop.
 
 `npm test` covers classification guards, provider request parameters, fallback,
 permissions, manual correction, retention and existing reception behavior.

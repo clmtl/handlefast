@@ -1,6 +1,6 @@
 - [x] Authentification avec better auth
 - [x] Lorsque l’adresse email de ma boutique reçoit un email, cet email est reçu par HandleFast — implémenté et validé en staging : transfert Gmail, pièces jointes, conversations, pause/reprise, récupération après erreur et limite de 25 MiB ; conservation 12 mois
-- [x] HandleFast garde uniquement les emails envoyés par des clients et à destination du SAV — implémenté et validé en staging : tri GPT-6 Luna, espaces SAV / À vérifier / Hors SAV, corrections manuelles, originaux conservés et plafond IA ; historique non reclassé
+- [x] HandleFast garde uniquement les emails envoyés par des clients et à destination du SAV — implémenté et validé en staging : tri GPT-6 Luna, espaces SAV / À vérifier / Hors SAV, corrections manuelles, originaux conservés ; historique non reclassé
 - [] HandleFast utilise l'api https://t.17track.net/en#nums=YT2604300704809938 ainsi que l'api Shopify de la boutique pour avoir toutes les informations sur une commande
 - [] HandleFast catégorie les emails par type puis leurs mets une importance en fonction du contenu
 - [] Lorsque HandleFast n'a pas le droit de répondre à un email, il le résume, fait une proposition de solution ou réponse et émet une alerte pour que l'utilisateur le traite
