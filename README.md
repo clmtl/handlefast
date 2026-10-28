@@ -56,7 +56,8 @@ No automatic reply, spam/SAV classification, Shopify integration or sending pipe
 - Email Routing is enabled for `handlefast.io`; its catch-all points to `handlefast-staging`. Cloudflare reports the domain ready. The previous main Worker and Convex production deployment are unchanged.
 - Webhook secrets are configured on both services. The deployed backend passed synthetic upload/parsing/download checks at 1 KiB and 25 MiB. These checks do not prove SMTP delivery or forwarding from a real mailbox.
 - Resend has verified `handlefast.io`; its sending-only staging key is configured as `RESEND_API_KEY` on this Convex deployment, with `AUTH_EMAIL_FROM=HandleFast <auth@handlefast.io>`. Sending DNS records preserve Cloudflare's inbound routing. Signup deliberately requires email verification.
-- Remaining acceptance checks: create a real staging account, receive and follow its verification email, then validate real mailbox forwarding before promoting the feature.
+- Acceptance evidence (2026-10-28): the user received and verified the signup email and signed in. Gmail's forwarding confirmation arrived through Cloudflare and was readable in HandleFast. Forwarding is enabled with a copy retained in Gmail. A real message sent from another mailbox passed the support-address challenge (`Forwarding verified`); its text was readable and its PNG attachment downloaded successfully (2,460,949 bytes, 1496 × 1542 pixels).
+- Remaining acceptance checks before promotion: real-provider threading/reopening, duplicate delivery, paused reception/recovery, and the 25 MiB boundary through Cloudflare. The corresponding automated/backend checks do not replace these provider checks.
 
 For staging builds, put these public values in the ignored `.env.staging` file:
 
