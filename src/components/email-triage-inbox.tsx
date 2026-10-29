@@ -2,6 +2,13 @@ import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import {
+  type Category,
+  categories,
+  type Priority,
+  priorities,
+} from "../../convex/lib/emailClassificationPolicy";
+import { ClassificationBadges, ClassificationControls } from "./email-classification";
 import { EmailReader } from "./inbound-email-settings";
 
 const buckets = { sav: "SAV", review: "À vérifier", other: "Hors SAV" } as const;
@@ -22,12 +29,15 @@ type Bucket = keyof typeof buckets;
 
 export function EmailTriageInbox({ shopId }: { shopId: Id<"shops"> }) {
   const [bucket, setBucket] = useState<Bucket>("sav");
+  const [category, setCategory] = useState<Category | "">("");
+  const [priority, setPriority] = useState<Priority | "">("");
   return (
     <section className="mb-6 rounded-lg border bg-card p-5">
       <h2 className="text-xl font-semibold">Boîte SAV</h2>
       <p className="mt-2 text-sm text-muted-foreground">
         Les nouveaux emails sont triés automatiquement. Vérifiez régulièrement les messages
-        incertains. Les originaux restent disponibles pendant 12 mois.
+        incertains. Les emails SAV reçoivent une catégorie et une importance selon leur contenu. Les
+        originaux restent disponibles pendant 12 mois.
       </p>
       <fieldset className="my-5 flex flex-wrap gap-2" aria-label="Classement des emails">
         {Object.entries(buckets).map(([value, label]) => (
@@ -46,16 +56,78 @@ export function EmailTriageInbox({ shopId }: { shopId: Id<"shops"> }) {
           </button>
         ))}
       </fieldset>
-      <TriageList key={`${shopId}:${bucket}`} shopId={shopId} bucket={bucket} />
+      {bucket === "sav" && (
+        <div className="mb-5 flex flex-wrap gap-3">
+          <label className="grid gap-1 text-sm font-medium">
+            Filtrer par catégorie
+            <select
+              className={`${button} max-w-full`}
+              value={category}
+              onChange={(event) => setCategory(event.target.value as Category | "")}
+            >
+              <option value="">Toutes les catégories</option>
+              {Object.entries(categories).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Filtrer par importance
+            <select
+              className={button}
+              value={priority}
+              onChange={(event) => setPriority(event.target.value as Priority | "")}
+            >
+              <option value="">Toutes les importances</option>
+              {Object.entries(priorities).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {(category || priority) && (
+            <button
+              className={`${button} self-end`}
+              type="button"
+              onClick={() => {
+                setCategory("");
+                setPriority("");
+              }}
+            >
+              Réinitialiser les filtres
+            </button>
+          )}
+        </div>
+      )}
+      <TriageList
+        key={`${shopId}:${bucket}:${category}:${priority}`}
+        shopId={shopId}
+        bucket={bucket}
+        category={bucket === "sav" ? category || undefined : undefined}
+        priority={bucket === "sav" ? priority || undefined : undefined}
+      />
     </section>
   );
 }
 
-function TriageList({ shopId, bucket }: { shopId: Id<"shops">; bucket: Bucket }) {
+function TriageList({
+  shopId,
+  bucket,
+  category,
+  priority,
+}: {
+  shopId: Id<"shops">;
+  bucket: Bucket;
+  category?: Category;
+  priority?: Priority;
+}) {
   const [asOf] = useState(() => Date.now());
   const { results, status, loadMore } = usePaginatedQuery(
     api.emailTriage.list,
-    { shopId, bucket, asOf },
+    { shopId, bucket, asOf, category, priority },
     { initialNumItems: 25 },
   );
   const permissions = useQuery(api.emailTriage.permissions, { shopId });
@@ -95,6 +167,12 @@ function TriageList({ shopId, bucket }: { shopId: Id<"shops">; bucket: Bucket })
         {results.map((email) => (
           <li key={email.id} className="py-4">
             <p className="break-words font-medium">{email.subject}</p>
+            {bucket === "sav" && (
+              <ClassificationBadges
+                classification={email.classification}
+                pending={email.classificationPending}
+              />
+            )}
             <p className="mt-1 break-all text-sm text-muted-foreground">
               {email.from} · {new Date(email.receivedAt).toLocaleString()}
             </p>
@@ -102,6 +180,14 @@ function TriageList({ shopId, bucket }: { shopId: Id<"shops">; bucket: Bucket })
             <p className="mt-2 text-sm text-muted-foreground">
               {reasons[email.reason] ?? "À vérifier"}
             </p>
+            {bucket === "sav" && (
+              <ClassificationControls
+                receiptId={email.id}
+                classification={email.classification}
+                pending={email.classificationPending}
+                canCorrect={permissions?.canCorrect ?? false}
+              />
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <button className={button} type="button" onClick={() => setSelected(email.id)}>
                 Ouvrir

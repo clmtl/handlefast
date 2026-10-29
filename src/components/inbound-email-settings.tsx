@@ -3,6 +3,7 @@ import PostalMime, { type Email } from "postal-mime";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { EmailClassification } from "./email-classification";
 import { OrderContext } from "./order-context";
 
 const button =
@@ -442,6 +443,7 @@ export function EmailReader({
             </div>
           </>
         )}
+        <EmailClassification receiptId={receiptId} />
       </section>
       <OrderContext receiptId={receiptId} />
     </div>
