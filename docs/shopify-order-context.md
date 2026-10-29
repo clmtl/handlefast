@@ -14,8 +14,9 @@ Implementation is deployed to staging for acceptance. Live merchant installation
 
 - The merchant's CLI authorization and automatic organization lookup succeeded. Shopify rejected app creation (`SHOPIFY_APP_CREATE_REJECTED`); the generated branding name was 31 characters, exceeding Shopify CLI's 30-character branding schema limit.
 - Generated names are now capped at 30 characters and validated before the provider request. Retrying a confirmed rejection replaces an invalid legacy name in the existing operation. Ambiguous attempts retain their original names so recovery cannot create a duplicate app. The provider test now enforces Shopify's actual limit; 108 tests, TypeScript and lint pass.
+- Backend correction `bde3040` is deployed to `frugal-gecko-721`. The frontend Worker version is unchanged. A fresh browser authorization was prepared for the merchant to retry.
 - `TRACK17_API_KEY` is configured on staging and was read back for equality without logging its value. The authenticated `v2.4/getquota` check succeeded: 200 total, 200 remaining, 0 used. The ignored local `.env.17track-staging` file is mode `0600`.
-- The 17TRACK account still needs its webhook URL set to `https://frugal-gecko-721.convex.site/webhooks/17track` and a real parcel to validate delivery updates. No test tracking number was registered and no quota was consumed by the configuration check.
+- The deployed webhook accepts a correctly signed empty update (HTTP 200) and rejects an invalid signature (HTTP 401). The 17TRACK account still needs its webhook URL set to `https://frugal-gecko-721.convex.site/webhooks/17track` and a real parcel to validate delivery updates. No test tracking number was registered and no quota was consumed by the configuration check.
 
 ## Staging deployment — 2026-10-28
 
