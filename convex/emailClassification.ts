@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx, mutation, query } from "./_generated/server";
-import { ensureHumanReview } from "./humanReviews";
+import { cancelAutomaticReply, routeSupportReply } from "./automaticReplies";
 import { requireShopMembership } from "./lib/authorization";
 import {
   CLASSIFICATION_TIMEOUT_MS,
@@ -71,6 +71,7 @@ export const correct = mutation({
   returns: v.null(),
   handler: async (ctx, { receiptId, category, priority }) => {
     const { profile } = await editableReceipt(ctx, receiptId);
+    await cancelAutomaticReply(ctx, receiptId);
     await ctx.db.patch(receiptId, {
       classification: {
         category,
@@ -83,7 +84,7 @@ export const correct = mutation({
       classificationUpdatedAt: Date.now(),
       classificationUpdatedBy: profile._id,
     });
-    await ensureHumanReview(ctx, receiptId);
+    await routeSupportReply(ctx, receiptId);
     return null;
   },
 });
@@ -185,7 +186,7 @@ async function saveAutomatic(
           classificationUpdatedBy: undefined,
         }),
   });
-  await ensureHumanReview(ctx, receipt._id);
+  await routeSupportReply(ctx, receipt._id);
 }
 
 export const complete = internalMutation({

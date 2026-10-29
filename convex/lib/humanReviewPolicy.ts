@@ -16,12 +16,16 @@ export const reviewStatus = v.union(
   v.literal("resolved"),
 );
 export const blockReasons = {
+  automatic_rule: "Une règle autorise une réponse automatique si le contenu le permet.",
+  automatic_unavailable: "La réponse automatique nécessite une vérification humaine.",
   auto_reply_disabled: "La réponse automatique est désactivée pour cette boutique.",
   classification_review: "Le classement nécessite une vérification humaine.",
   sensitive_request: "L’importance de cet email nécessite une validation humaine.",
   no_authorized_rule: "Aucune règle n’autorise actuellement une réponse automatique.",
 } as const;
 export const blockReason = v.union(
+  v.literal("automatic_rule"),
+  v.literal("automatic_unavailable"),
   v.literal("auto_reply_disabled"),
   v.literal("classification_review"),
   v.literal("sensitive_request"),
@@ -76,13 +80,15 @@ export const humanReviewValidator = v.object({
   draftUpdatedAt: v.optional(v.number()),
 });
 
-// The enable flag alone is not permission. Feature 7 will introduce explicit rules.
+// The enable flag alone is not permission; an explicit category/importance rule is required.
 export function replyBlockReason(
   enabled: boolean,
   classification?: Classification,
+  hasRule = false,
 ): Infer<typeof blockReason> {
   if (!enabled) return "auto_reply_disabled";
   if (!classification || classification.needsReview) return "classification_review";
+  if (hasRule) return "automatic_rule";
   if (classification.priority === "urgent" || classification.priority === "high")
     return "sensitive_request";
   return "no_authorized_rule";

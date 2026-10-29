@@ -4,7 +4,7 @@ SAV emails that cannot receive an automatic reply now create a visible **Demande
 
 ## Reply permission and workflow
 
-There are currently no category/importance authorization rules or customer-email sending pipeline (feature 7). The shop's `autoReplyEnabled` flag alone does not authorize a response. The server records a fixed blocking reason: automation disabled, classification requiring review, sensitive importance, or no authorized rule. Every new SAV receipt therefore requires human handling. A proposal never grants permission or executes an action.
+[Feature 7](automatic-support-replies.md) now supplies explicit category/importance rules and a customer-email sending pipeline. The shop's enable flag alone does not authorize a response. Emails without a qualifying rule or safe response, as well as interrupted/uncertain automatic sends, require human handling. Active or accepted automatic replies suppress the manual alert; staff can cancel a pending automatic reply to take over. A human proposal never grants sending permission or executes an action.
 
 The alert is created transactionally when ingestion commits, before the classification/model calls finish. The assistance action waits for category/importance processing, including its failure fallback. A manual move into SAV creates an alert; a move out removes it and invalidates pending work. Existing emails can be prepared individually from their reader; there is no bulk historical backfill. Each new reply has its own receipt/alert rather than silently reopening a previously handled receipt.
 

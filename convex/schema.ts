@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { automaticReplyFields, replyRule } from "./lib/automaticReplyPolicy";
 import { connectionFields, orderFields, shipmentFields } from "./lib/commerceModel";
 import { receiptFields } from "./lib/emailReceiptValidators";
 import { guidedFields } from "./lib/shopifyGuidedModel";
@@ -99,6 +100,10 @@ export default defineSchema({
     .index("by_number", ["number"])
     .index("by_connectionId", ["connectionId"])
     .index("by_active_and_nextAttemptAt", ["active", "nextAttemptAt"]),
+  automaticReplies: defineTable(automaticReplyFields)
+    .index("by_replyToken", ["replyToken"])
+    .index("by_receiptId", ["receiptId"])
+    .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"]),
   emailReceipts: defineTable(receiptFields)
     .index("by_key", ["key"])
     .index("by_sha256_and_status", ["sha256", "status"])
@@ -210,6 +215,10 @@ export default defineSchema({
     locale: v.string(),
     timezone: v.string(),
     autoReplyEnabled: v.boolean(),
+    autoReplyRules: v.optional(v.array(replyRule)),
+    autoReplyRevision: v.optional(v.number()),
+    autoReplyActivatedAt: v.optional(v.number()),
+    autoReplyUpdatedBy: v.optional(v.id("profiles")),
     escalationEmail: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -264,6 +273,7 @@ export default defineSchema({
     shopId: v.id("shops"),
     routeId: v.id("inboundEmailRoutes"),
     customerEmail: v.string(),
+    autoReplyReservedAt: v.optional(v.number()),
     subject: v.optional(v.string()),
     status: supportConversationStatusValidator,
     lastMessageAt: v.number(),
@@ -302,6 +312,11 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index("by_conversationId_and_direction_and_receivedAt", [
+      "conversationId",
+      "direction",
+      "receivedAt",
+    ])
     .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
     .index("by_conversationId_and_receivedAt", ["conversationId", "receivedAt"])
     .index("by_shopId_and_createdAt", ["shopId", "createdAt"])

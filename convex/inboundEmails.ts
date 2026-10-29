@@ -1,11 +1,16 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
+import { routeSupportReply } from "./automaticReplies";
 import { queueClassification } from "./emailClassification";
-import { ensureHumanReview } from "./humanReviews";
+import { suppressAutoResponse } from "./lib/automaticReplyPolicy";
 import { emailExpiresAt } from "./lib/emailPolicy";
 import { triageDecision } from "./lib/emailTriagePolicy";
-import { normalizeEmailAddress } from "./lib/inboundEmailRoutes";
+import {
+  automaticReplyRoute,
+  normalizeEmailAddress,
+  resolveInboundEmailRoute,
+} from "./lib/inboundEmailRoutes";
 
 const maxBodyLength = 12_000;
 const maxHeaderCount = 40;
@@ -101,10 +106,7 @@ export const ingestFromWorker = internalMutation({
     }
 
     const envelopeTo = normalizeEmailAddress(args.envelopeTo);
-    const route = await ctx.db
-      .query("inboundEmailRoutes")
-      .withIndex("by_address", (q) => q.eq("address", envelopeTo))
-      .unique();
+    const route = await resolveInboundEmailRoute(ctx, envelopeTo);
 
     const shop = route ? await ctx.db.get(route.shopId) : null;
     if (route?.status !== "active" || !shop || shop.status === "disabled") {
@@ -155,6 +157,7 @@ export const ingestFromWorker = internalMutation({
             receivedAt,
             references,
             route,
+            replyAddress: envelopeTo,
             subject,
           })
         : undefined;
@@ -244,6 +247,7 @@ export const ingestFromWorker = internalMutation({
     if (receipt) {
       await ctx.db.patch(receipt._id, {
         status: "processed",
+        automaticReplySuppressed: suppressAutoResponse(args.headers),
         error: undefined,
         updatedAt: now,
         ...(decision
@@ -252,7 +256,7 @@ export const ingestFromWorker = internalMutation({
       });
       if (decision?.bucket === "sav" && !receipt.classification)
         await queueClassification(ctx, receipt._id);
-      if (decision?.bucket === "sav") await ensureHumanReview(ctx, receipt._id);
+      if (decision?.bucket === "sav") await routeSupportReply(ctx, receipt._id, true);
     }
     await ctx.db.patch(route._id, {
       lastReceivedAt: Math.max(route.lastReceivedAt ?? 0, receivedAt),
@@ -291,6 +295,7 @@ export async function getOrCreateConversationId(
   ctx: MutationCtx,
   args: {
     route: Doc<"inboundEmailRoutes">;
+    replyAddress?: string;
     customerEmail: string;
     subject: string | null;
     inReplyTo: string | null;
@@ -299,10 +304,20 @@ export async function getOrCreateConversationId(
     receivedAt: number;
   },
 ) {
-  const referencedMessageId = await getConversationIdByReferences(ctx, args.route.shopId, [
-    args.inReplyTo,
-    ...[...args.references].reverse(),
-  ]);
+  const outgoing = args.replyAddress ? await automaticReplyRoute(ctx, args.replyAddress) : null;
+  if (
+    outgoing?.route._id === args.route._id &&
+    outgoing.reply.payload?.to[0] === args.customerEmail
+  ) {
+    const conversation = await ctx.db.get(outgoing.reply.conversationId);
+    if (conversation?.customerEmail === args.customerEmail) return conversation._id;
+  }
+  const referencedMessageId = await getConversationIdByReferences(
+    ctx,
+    args.route.shopId,
+    args.customerEmail,
+    [args.inReplyTo, ...[...args.references].reverse()],
+  );
 
   if (referencedMessageId) {
     return referencedMessageId;
@@ -324,6 +339,7 @@ export async function getOrCreateConversationId(
 async function getConversationIdByReferences(
   ctx: MutationCtx,
   shopId: Id<"shops">,
+  customerEmail: string,
   references: Array<string | null>,
 ) {
   for (const reference of references) {
@@ -339,7 +355,12 @@ async function getConversationIdByReferences(
       .take(1);
     const referencedMessage = referencedMessages[0];
 
-    if (referencedMessage?.shopId === shopId && referencedMessage.conversationId) {
+    if (
+      referencedMessage?.shopId === shopId &&
+      referencedMessage.from.address === customerEmail &&
+      (referencedMessage.expiresAt ?? 0) > Date.now() &&
+      referencedMessage.conversationId
+    ) {
       return referencedMessage.conversationId;
     }
   }

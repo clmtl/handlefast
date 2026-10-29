@@ -1,5 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
-import { env, type MutationCtx } from "../_generated/server";
+import { env, type MutationCtx, type QueryCtx } from "../_generated/server";
 
 const defaultInboundEmailDomain = "handlefast.io";
 const maxEmailLocalPartLength = 64;
@@ -88,4 +88,26 @@ function normalizeEmailLocalPart(value: string) {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, maxEmailLocalPartLength);
+}
+
+// Per-response Reply-To aliases preserve threads even when a sending provider rewrites Message-ID.
+export async function automaticReplyRoute(ctx: MutationCtx | QueryCtx, address: string) {
+  const match = /^hf_reply_([a-z0-9-]{36})@([^@]+)$/i.exec(address);
+  if (!match) return null;
+  const reply = await ctx.db
+    .query("automaticReplies")
+    .withIndex("by_replyToken", (q) => q.eq("replyToken", match[1]))
+    .unique();
+  if (!reply || !["sending", "retrying", "sent", "uncertain"].includes(reply.status)) return null;
+  const receipt = await ctx.db.get(reply.receiptId);
+  if (!receipt || receipt.expiresAt <= Date.now()) return null;
+  const route = await ctx.db.get(receipt.routeId);
+  return route?.domain === match[2].toLowerCase() ? { reply, route } : null;
+}
+export async function resolveInboundEmailRoute(ctx: MutationCtx | QueryCtx, address: string) {
+  const route = await ctx.db
+    .query("inboundEmailRoutes")
+    .withIndex("by_address", (q) => q.eq("address", address))
+    .unique();
+  return route ?? (await automaticReplyRoute(ctx, address))?.route ?? null;
 }

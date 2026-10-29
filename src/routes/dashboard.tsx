@@ -3,6 +3,7 @@ import { useQuery } from "convex/react";
 import { Inbox, LogOut, ShieldCheck, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LoadingScreen, RequireAuth } from "@/components/auth-layout";
+import { AutomaticReplySettings } from "@/components/automatic-replies";
 import { EmailTriageInbox } from "@/components/email-triage-inbox";
 import { HumanReviewInbox } from "@/components/human-review-inbox";
 import { InboundEmailSettings } from "@/components/inbound-email-settings";
@@ -98,6 +99,7 @@ function Dashboard() {
             </select>
           </label>
         )}
+        {shop && <AutomaticReplySettings key={`automatic:${shop._id}`} shopId={shop._id} />}
         {shop && <HumanReviewInbox key={`reviews:${shop._id}`} shopId={shop._id} />}
         {shop && <ShopifySettings key={`shopify:${shop._id}`} shopId={shop._id} />}
         {shop && <EmailTriageInbox key={`triage:${shop._id}`} shopId={shop._id} />}

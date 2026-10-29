@@ -73,6 +73,12 @@ export const updateSettings = mutation({
       locale: args.locale?.trim() || settings.locale,
       timezone: args.timezone?.trim() || settings.timezone,
       autoReplyEnabled: args.autoReplyEnabled ?? settings.autoReplyEnabled,
+      ...(args.autoReplyEnabled !== undefined && args.autoReplyEnabled !== settings.autoReplyEnabled
+        ? {
+            autoReplyRevision: (settings.autoReplyRevision ?? 0) + 1,
+            autoReplyActivatedAt: args.autoReplyEnabled ? now : undefined,
+          }
+        : {}),
       updatedAt: now,
     };
 

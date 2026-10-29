@@ -3,6 +3,7 @@ import PostalMime, { type Email } from "postal-mime";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { AutomaticReplyPanel } from "./automatic-replies";
 import { EmailClassification } from "./email-classification";
 import { HumanReviewPanel } from "./human-review-panel";
 import { OrderContext } from "./order-context";
@@ -447,6 +448,7 @@ export function EmailReader({
           </>
         )}
         <EmailClassification receiptId={receiptId} />
+        <AutomaticReplyPanel receiptId={receiptId} />
         <HumanReviewPanel receiptId={receiptId} />
       </section>
       <OrderContext receiptId={receiptId} refreshOnOpen={refreshOrderOnOpen} />
