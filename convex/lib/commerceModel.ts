@@ -20,6 +20,7 @@ export const connectionFields = {
   error: v.optional(v.string()),
   createdAt: v.number(),
   lookupAt: v.optional(v.number()),
+  webhooksConfiguredAt: v.optional(v.number()),
 };
 export const orderFields = {
   shopId: v.id("shops"),
@@ -101,14 +102,23 @@ export const trackingUpdate = v.object({
   eventAt: v.optional(v.number()),
 });
 export function shopDomain(input: string) {
-  const value = input
-    .trim()
-    .toLowerCase()
-    .replace(/^https:\/\//, "")
-    .replace(/\/$/, "");
-  if (!/^[a-z0-9][a-z0-9-]{0,62}\.myshopify\.com$/.test(value))
+  let value = input.trim().toLowerCase();
+  try {
+    if (value.startsWith("https://")) {
+      const url = new URL(value);
+      if (url.username || url.password || url.port || url.search || url.hash) throw new Error();
+      if (url.hostname === "admin.shopify.com" && /^\/store\/[a-z0-9-]+\/?$/.test(url.pathname))
+        value = `${url.pathname.split("/")[2]}.myshopify.com`;
+      else {
+        if (url.pathname !== "/") throw new Error();
+        value = url.hostname;
+      }
+    } else if (!value.includes(".")) value += ".myshopify.com";
+    if (!/^[a-z0-9][a-z0-9-]{0,62}\.myshopify\.com$/.test(value)) throw new Error();
+    return value;
+  } catch {
     throw new ConvexError("InvalidShopDomain");
-  return value;
+  }
 }
 export function normalizedEmail(input: string | undefined | null) {
   return input?.trim().toLowerCase() || undefined;

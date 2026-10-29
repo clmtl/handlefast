@@ -3,6 +3,11 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 crons.interval(
+  "expire Shopify browser authorizations",
+  { minutes: 5 },
+  internal.shopifyGuided.expireDue,
+);
+crons.interval(
   "recover and synchronize Shopify orders",
   { minutes: 5 },
   internal.shopifySync.recover,

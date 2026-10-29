@@ -1,15 +1,8 @@
 import { z } from "zod";
 import { internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
-import { shopDomain } from "./lib/commerceModel";
-import {
-  exchangeCredentials,
-  normalizeTracking,
-  ORDERS_QUERY,
-  SHOP_QUERY,
-  shopifyGraphql,
-} from "./lib/commerceProviders";
-import { decrypt, encrypt, equalSignature, sha256, verifyShopify } from "./lib/commerceSecrets";
+import { normalizeTracking } from "./lib/commerceProviders";
+import { decrypt, equalSignature, sha256, verifyShopify } from "./lib/commerceSecrets";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -39,84 +32,6 @@ export async function boundedBody(req: Request, max: number) {
     reader.releaseLock();
   }
 }
-function pairingCode(req: Request) {
-  const value = req.headers.get("authorization")?.replace(/^Bearer /, "");
-  return value && /^[a-f0-9]{64}$/.test(value) ? value : null;
-}
-export const bootstrap = httpAction(async (ctx, req) => {
-  const code = pairingCode(req);
-  if (!code) return json({ error: "InvalidPairing" }, 401);
-  const pair = await ctx.runQuery(internal.shopifyConnection.pairing, {
-    tokenHash: await sha256(code),
-  });
-  if (!pair) return json({ error: "PairingExpired" }, 401);
-  return json({
-    domain: pair.domain,
-    name: pair.name,
-    organizationName: pair.organizationName,
-    expiresAt: pair.expiresAt,
-    siteUrl: pair.siteUrl,
-    apiVersion: pair.apiVersion,
-    webhookUrl: `${new URL(req.url).origin}/webhooks/shopify`,
-  });
-});
-export const complete = httpAction(async (ctx, req) => {
-  const code = pairingCode(req);
-  if (!code) return json({ error: "InvalidPairing" }, 401);
-  const tokenHash = await sha256(code);
-  const pair = await ctx.runQuery(internal.shopifyConnection.pairing, { tokenHash });
-  if (!pair) return json({ error: "PairingExpired" }, 401);
-  const body = await boundedBody(req, 16_384);
-  if (body === null) return json({ error: "PayloadTooLarge" }, 413);
-  try {
-    const credentials = z
-      .object({
-        clientId: z.string().regex(/^[a-f0-9]{32}$/i),
-        clientSecret: z.string().min(16).max(4096),
-      })
-      .strict()
-      .parse(JSON.parse(body));
-    const result = await exchangeCredentials(
-      pair.domain,
-      credentials.clientId,
-      credentials.clientSecret,
-    );
-    const scopes = result.scope.split(",").map((s) => s.trim());
-    if (!scopes.includes("read_orders") || scopes.some((s) => s.startsWith("write_")))
-      return json({ error: "ReadOnlyOrdersPermissionRequired" }, 400);
-    const data = z
-      .object({ shop: z.object({ id: z.string(), myshopifyDomain: z.string() }) })
-      .parse(await shopifyGraphql(pair.domain, result.access_token, SHOP_QUERY));
-    if (shopDomain(data.shop.myshopifyDomain) !== pair.domain)
-      return json({ error: "ShopDomainMismatch" }, 400);
-    // Test protected customer/order fields before claiming the connection is usable.
-    await shopifyGraphql(pair.domain, result.access_token, ORDERS_QUERY, {
-      query: "status:any",
-      after: null,
-    });
-    const context = `shopify:${pair.shopId}`;
-    await ctx.runMutation(internal.shopifyConnection.finish, {
-      tokenHash,
-      domain: pair.domain,
-      shopifyShopId: data.shop.id,
-      clientId: credentials.clientId,
-      secret: await encrypt(credentials.clientSecret, context),
-      token: await encrypt(result.access_token, context),
-      tokenExpiresAt: Date.now() + result.expires_in * 1000,
-      scopes,
-    });
-    return json({ connected: true, domain: pair.domain });
-  } catch {
-    return json(
-      {
-        error: "ConnectionVerificationFailed",
-        message:
-          "Vérifiez l’installation sur la bonne boutique et l’accès aux commandes et données clients.",
-      },
-      400,
-    );
-  }
-});
 export const shopifyWebhook = httpAction(async (ctx, req) => {
   const domain = req.headers.get("x-shopify-shop-domain");
   if (!domain || !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(domain))
@@ -139,6 +54,8 @@ export const shopifyWebhook = httpAction(async (ctx, req) => {
       "orders/create",
       "orders/updated",
       "orders/cancelled",
+      "orders/fulfilled",
+      "orders/partially_fulfilled",
       "refunds/create",
       "fulfillments/create",
       "fulfillments/update",

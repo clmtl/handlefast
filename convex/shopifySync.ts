@@ -12,6 +12,7 @@ import {
   shopifyGraphql,
 } from "./lib/commerceProviders";
 import { decrypt, encrypt } from "./lib/commerceSecrets";
+import { configureSupportWebhooks } from "./lib/shopifyWebhooks";
 
 export async function accessToken(ctx: ActionCtx, row: Doc<"shopifyConnections">) {
   const context = `shopify:${row.shopId}`;
@@ -110,6 +111,17 @@ export const page = internalAction({
     if (!row || row.generation !== args.generation || row.syncLease !== args.lease) return null;
     try {
       const token = await accessToken(ctx, row);
+      if (!row.webhooksConfiguredAt) {
+        await configureSupportWebhooks(
+          row.domain,
+          token,
+          `${process.env.CONVEX_SITE_URL}/webhooks/shopify`,
+        );
+        await ctx.runMutation(internal.shopifySync.webhooksConfigured, {
+          connectionId: row._id,
+          generation: row.generation,
+        });
+      }
       const result = parseOrders(
         await shopifyGraphql(row.domain, token, ORDERS_QUERY, {
           query: `updated_at:>='${new Date(args.since).toISOString()}' updated_at:<='${new Date(args.startedAt).toISOString()}'`,
@@ -151,11 +163,22 @@ export function commerceError(error: unknown) {
     "ShopifyOrdersPermissionMissing",
     "CommerceEncryptionNotConfigured",
     "InvalidCommerceEncryptionKey",
+    "ShopifyWebhookConfigurationFailed",
   ]);
   return error instanceof Error && safe.has(error.message)
     ? error.message
     : "SynchronizationFailed";
 }
+export const webhooksConfigured = internalMutation({
+  args: { connectionId: v.id("shopifyConnections"), generation: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.connectionId);
+    if (row?.status === "active" && row.generation === args.generation)
+      await ctx.db.patch(row._id, { webhooksConfiguredAt: Date.now() });
+    return null;
+  },
+});
 export const savePage = internalMutation({
   args: {
     connectionId: v.id("shopifyConnections"),

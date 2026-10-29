@@ -1,4 +1,4 @@
-// Local-only integration check: creates synthetic fixtures, never sends email.
+// Local-only integration check. --live-device issues then cancels a Shopify device authorization; never approves it or creates an app.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -63,32 +63,31 @@ const workspace = run(
   { organizationName: "Local commerce smoke", shopName: "Synthetic commerce shop" },
   identity,
 );
-const pairing = run(
-  "shopifyConnection:begin",
-  { shopId: workspace.shopId, domain: "handlefast-smoke.myshopify.com" },
+const live = process.argv.includes("--live-device");
+const sessionId = run(
+  live ? "shopifyGuidedActions:start" : "shopifyGuided:reserve",
+  { shopId: workspace.shopId, domain: "https://admin.shopify.com/store/handlefast-smoke" },
   identity,
 );
-assert.match(pairing.code, /^[a-f0-9]{64}$/);
-const response = await fetch(`${site}/integrations/shopify/bootstrap`, {
-  method: "POST",
-  headers: { Authorization: `Bearer ${pairing.code}` },
-});
-assert.equal(response.status, 200);
-const bootstrap = await response.json();
-assert.equal(bootstrap.domain, "handlefast-smoke.myshopify.com");
-assert.equal(bootstrap.organizationName, "Local commerce smoke");
-assert.equal("shopId" in bootstrap, false);
-const invalid = await fetch(`${site}/integrations/shopify/bootstrap`, {
-  method: "POST",
-  headers: { Authorization: `Bearer ${"0".repeat(64)}` },
-});
-assert.equal(invalid.status, 401);
-await run("shopifyConnection:disconnect", { shopId: workspace.shopId }, identity);
-const cancelled = await fetch(`${site}/integrations/shopify/bootstrap`, {
-  method: "POST",
-  headers: { Authorization: `Bearer ${pairing.code}` },
-});
-assert.equal(cancelled.status, 401);
+const sessionView = run("shopifyGuided:get", { sessionId }, identity);
+assert.equal(sessionView.domain, "handlefast-smoke.myshopify.com");
+assert.equal(sessionView.status, live ? "pending" : "initializing");
+assert.equal("secret" in sessionView, false);
+if (live) {
+  assert.equal(new URL(sessionView.verificationUrl).origin, "https://accounts.shopify.com");
+  assert.ok(sessionView.userCode);
+  await new Promise((resolve) =>
+    setTimeout(resolve, Math.max(0, sessionView.nextPollAt - Date.now()) + 10),
+  );
+  run("shopifyGuidedActions:poll", { sessionId }, identity);
+  assert.equal(run("shopifyGuided:get", { sessionId }, identity).status, "pending");
+}
+run("shopifyGuided:cancel", { sessionId }, identity);
+const cancelled = run("shopifyGuided:get", { sessionId }, identity);
+assert.equal(cancelled.status, "error");
+assert.equal(cancelled.secret, undefined);
 console.log(
-  "Local commerce smoke passed: authenticated pairing, organization binding, invalid code, cancellation. No Shopify or 17TRACK call made.",
+  live
+    ? "Local browser-flow smoke passed: real Shopify device authorization issued, encrypted and cancelled. No approval or merchant-app creation performed."
+    : "Local browser-flow smoke passed: organization-bound authenticated session, sanitized public state and cancellation. No provider calls made.",
 );

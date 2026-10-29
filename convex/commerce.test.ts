@@ -7,6 +7,7 @@ import { api, components, internal } from "./_generated/api";
 import { decrypt, encrypt, sha256 } from "./lib/commerceSecrets";
 import { TRIAGE_VERSION } from "./lib/emailTriagePolicy";
 import schema from "./schema";
+import { storeConnection } from "./shopifyConnection";
 
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 function backend() {
@@ -60,17 +61,19 @@ async function connect(
   domain = "test.myshopify.com",
   clientId = "a".repeat(32),
 ) {
-  const pair = await w.client.mutation(api.shopifyConnection.begin, { shopId: w.shopId, domain });
-  await t.mutation(internal.shopifyConnection.finish, {
-    tokenHash: await sha256(pair.code),
-    domain,
-    shopifyShopId: "gid://shopify/Shop/1",
-    clientId,
-    secret: await encrypt("secret-secret-secret", `shopify:${w.shopId}`),
-    token: await encrypt("test-access-token", `shopify:${w.shopId}`),
-    tokenExpiresAt: Date.now() + 3600_000,
-    scopes: ["read_orders"],
-  });
+  await t.run(async (ctx) =>
+    storeConnection(ctx, {
+      shopId: w.shopId,
+      organizationId: w.organizationId,
+      domain,
+      shopifyShopId: "gid://shopify/Shop/1",
+      clientId,
+      secret: await encrypt("secret-secret-secret", `shopify:${w.shopId}`),
+      token: await encrypt("test-access-token", `shopify:${w.shopId}`),
+      tokenExpiresAt: Date.now() + 3600_000,
+      scopes: ["read_orders"],
+    }),
+  );
   const row = await t.run((ctx) =>
     ctx.db
       .query("shopifyConnections")
@@ -78,7 +81,8 @@ async function connect(
       .unique(),
   );
   if (!row) throw new Error("Missing connection");
-  return { row, pair };
+  await t.run((ctx) => ctx.db.patch(row._id, { webhooksConfiguredAt: Date.now() }));
+  return { row };
 }
 function order(gid = "gid://shopify/Order/1234", email = "customer@example.com") {
   return {
@@ -165,20 +169,17 @@ describe("shopify connection and tenant isolation", () => {
     const t = backend(),
       owner = await workspace(t, "owner"),
       outsider = await workspace(t, "outsider");
-    const { row, pair } = await connect(t, owner);
+    const { row } = await connect(t, owner);
     expect(row.organizationId).toBe(owner.organizationId);
     const status = await owner.client.query(api.shopifyConnection.status, { shopId: owner.shopId });
     expect(status.connected).toBe(true);
     expect(status).not.toHaveProperty("secret");
     expect(status).not.toHaveProperty("token");
-    expect(
-      await t.query(internal.shopifyConnection.pairing, { tokenHash: await sha256(pair.code) }),
-    ).toBeNull();
     await expect(
       outsider.client.query(api.shopifyConnection.status, { shopId: owner.shopId }),
     ).rejects.toThrow("Forbidden");
     await expect(
-      outsider.client.mutation(api.shopifyConnection.begin, {
+      outsider.client.mutation(internal.shopifyGuided.reserve, {
         shopId: outsider.shopId,
         domain: row.domain,
       }),
@@ -190,47 +191,6 @@ describe("shopify connection and tenant isolation", () => {
     const removed = await t.run((ctx) => ctx.db.get(row._id));
     expect(removed?.secret).toBe("");
     expect(removed?.token).toBe("");
-  });
-  test("completes the client-credentials flow over HTTP and consumes the organization-bound pairing only after verification", async () => {
-    const t = backend(),
-      w = await workspace(t, "http-connect");
-    const pair = await w.client.mutation(api.shopifyConnection.begin, {
-      shopId: w.shopId,
-      domain: "http-connect.myshopify.com",
-    });
-    const calls = vi.fn().mockImplementation(async (url: string) => {
-      if (url.endsWith("/oauth/access_token"))
-        return new Response(
-          JSON.stringify({ access_token: "api-token", expires_in: 86400, scope: "read_orders" }),
-        );
-      if (calls.mock.calls.length === 2)
-        return new Response(
-          JSON.stringify({
-            data: {
-              shop: { id: "gid://shopify/Shop/100", myshopifyDomain: "http-connect.myshopify.com" },
-            },
-          }),
-        );
-      return new Response(
-        JSON.stringify({
-          data: { orders: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } },
-        }),
-      );
-    });
-    vi.stubGlobal("fetch", calls);
-    const request = {
-      method: "POST",
-      headers: { Authorization: `Bearer ${pair.code}` },
-      body: JSON.stringify({ clientId: "c".repeat(32), clientSecret: "private-client-secret" }),
-    };
-    const response = await t.fetch("/integrations/shopify/complete", request);
-    expect(response.status).toBe(200);
-    const row = await t.run((ctx) => ctx.db.query("shopifyConnections").first());
-    expect(row?.organizationId).toBe(w.organizationId);
-    expect(await decrypt(row?.secret ?? "", `shopify:${w.shopId}`)).toBe("private-client-secret");
-    expect(row?.secret).not.toContain("private-client-secret");
-    expect((await t.fetch("/integrations/shopify/complete", request)).status).toBe(401);
-    expect(calls).toHaveBeenCalledTimes(3);
   });
   test("accepts a signed Shopify uninstall and rejects a forged uninstall", async () => {
     const t = backend(),
@@ -263,58 +223,6 @@ describe("shopify connection and tenant isolation", () => {
       200,
     );
     expect((await t.run((ctx) => ctx.db.get(row._id)))?.token).toBe("");
-  });
-  test("expires, cancels and revokes pairing after role removal", async () => {
-    const t = backend(),
-      w = await workspace(t, "expired");
-    const pair = await w.client.mutation(api.shopifyConnection.begin, {
-      shopId: w.shopId,
-      domain: "expired.myshopify.com",
-    });
-    vi.advanceTimersByTime(31 * 60_000);
-    expect(
-      await t.query(internal.shopifyConnection.pairing, { tokenHash: await sha256(pair.code) }),
-    ).toBeNull();
-    const fresh = await w.client.mutation(api.shopifyConnection.begin, {
-      shopId: w.shopId,
-      domain: "expired.myshopify.com",
-    });
-    await t.run(async (ctx) => {
-      const m = await ctx.db
-        .query("memberships")
-        .withIndex("by_organizationId", (q) => q.eq("organizationId", w.organizationId))
-        .first();
-      if (m) await ctx.db.patch(m._id, { role: "viewer" });
-    });
-    expect(
-      await t.query(internal.shopifyConnection.pairing, { tokenHash: await sha256(fresh.code) }),
-    ).toBeNull();
-    await expect(
-      w.client.mutation(api.shopifyConnection.begin, {
-        shopId: w.shopId,
-        domain: "expired.myshopify.com",
-      }),
-    ).rejects.toThrow("Forbidden");
-  });
-  test("rejects attacker-controlled hosts and invalid pairing credentials before network calls", async () => {
-    const t = backend(),
-      w = await workspace(t, "ssrf");
-    for (const domain of [
-      "evil.com",
-      "store.myshopify.com.evil.com",
-      "store.myshopify.com@evil.com",
-      "store.myshopify.com/path",
-      "http://localhost",
-    ])
-      await expect(
-        w.client.mutation(api.shopifyConnection.begin, { shopId: w.shopId, domain }),
-      ).rejects.toThrow("InvalidShopDomain");
-    const response = await t.fetch("/integrations/shopify/complete", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${"0".repeat(64)}` },
-      body: JSON.stringify({ clientId: "a".repeat(32), clientSecret: "secret" }),
-    });
-    expect(response.status).toBe(401);
   });
 });
 describe("support order context", () => {

@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { connectionFields, orderFields, shipmentFields } from "./lib/commerceModel";
 import { receiptFields } from "./lib/emailReceiptValidators";
+import { guidedFields } from "./lib/shopifyGuidedModel";
 
 export const roleValidator = v.union(
   v.literal("owner"),
@@ -45,6 +46,22 @@ const inboundEmailHeaderValidator = v.object({
 });
 
 export default defineSchema({
+  shopifyGuidedSessions: defineTable(guidedFields)
+    .index("by_shopId", ["shopId"])
+    .index("by_profileId", ["profileId"])
+    .index("by_oauthHash", ["oauthHash"])
+    .index("by_expiresAt", ["expiresAt"]),
+  shopifyGuidedOperations: defineTable({
+    shopId: v.id("shops"),
+    domain: v.string(),
+    shopifyOrganizationId: v.string(),
+    appName: v.string(),
+    creationAttempted: v.boolean(),
+    clientId: v.optional(v.string()),
+    sessionId: v.id("shopifyGuidedSessions"),
+    lease: v.string(),
+    leaseUntil: v.number(),
+  }).index("by_domain", ["domain"]),
   shopifyConnections: defineTable(connectionFields)
     .index("by_shopId", ["shopId"])
     .index("by_domain", ["domain"])
