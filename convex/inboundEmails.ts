@@ -8,6 +8,7 @@ import { emailExpiresAt } from "./lib/emailPolicy";
 import { triageDecision } from "./lib/emailTriagePolicy";
 import {
   automaticReplyRoute,
+  delayReplyRoute,
   normalizeEmailAddress,
   resolveInboundEmailRoute,
 } from "./lib/inboundEmailRoutes";
@@ -147,7 +148,19 @@ export const ingestFromWorker = internalMutation({
     const messageId = normalizeOptionalString(args.messageId);
     const inReplyTo = normalizeOptionalString(args.inReplyTo);
     const references = normalizeReferences(args.references);
-    const decision = receipt?.triage?.source === "manual" ? receipt.triage : args.triage;
+    const delay = await delayReplyRoute(ctx, envelopeTo);
+    const proactive = delay?.notice.payload?.to[0] === customerEmail ? delay.notice : null;
+    const decision =
+      receipt?.triage?.source === "manual"
+        ? receipt.triage
+        : proactive
+          ? {
+              bucket: "sav" as const,
+              reason: "post_purchase",
+              source: "rules" as const,
+              version: 1,
+            }
+          : args.triage;
     const conversationId =
       !decision || decision.bucket === "sav"
         ? await getOrCreateConversationId(ctx, {
@@ -247,6 +260,7 @@ export const ingestFromWorker = internalMutation({
     if (receipt) {
       await ctx.db.patch(receipt._id, {
         status: "processed",
+        proactiveNoticeId: proactive?._id,
         automaticReplySuppressed: suppressAutoResponse(args.headers),
         error: undefined,
         updatedAt: now,
@@ -304,6 +318,15 @@ export async function getOrCreateConversationId(
     receivedAt: number;
   },
 ) {
+  const proactive = args.replyAddress ? await delayReplyRoute(ctx, args.replyAddress) : null;
+  if (
+    proactive?.route._id === args.route._id &&
+    proactive.notice.payload?.to[0] === args.customerEmail &&
+    proactive.notice.conversationId
+  ) {
+    const conversation = await ctx.db.get(proactive.notice.conversationId);
+    if (conversation?.customerEmail === args.customerEmail) return conversation._id;
+  }
   const outgoing = args.replyAddress ? await automaticReplyRoute(ctx, args.replyAddress) : null;
   if (
     outgoing?.route._id === args.route._id &&

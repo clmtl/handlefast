@@ -12,6 +12,7 @@ import {
   shopifyGraphql,
 } from "./lib/commerceProviders";
 import { decrypt, encrypt } from "./lib/commerceSecrets";
+import { ensureDeliveryPromise } from "./lib/deliveryContext";
 import { configureSupportWebhooks } from "./lib/shopifyWebhooks";
 
 export async function accessToken(ctx: ActionCtx, row: Doc<"shopifyConnections">) {
@@ -292,6 +293,8 @@ export async function persistOrder(
     if (shipment) await ctx.db.replace(shipment._id, value);
     else await ctx.db.insert("orderShipments", value);
   }
+  const savedOrder = await ctx.db.get(orderId);
+  if (savedOrder) await ensureDeliveryPromise(ctx, savedOrder);
   return orderId;
 }
 export const failed = internalMutation({

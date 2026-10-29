@@ -224,7 +224,12 @@ export async function cachedOrderContext(
     .query("orderLinks")
     .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
     .unique();
-  let selected = link?.orderId ? await ctx.db.get(link.orderId) : null;
+  const proactive = receipt.proactiveNoticeId ? await ctx.db.get(receipt.proactiveNoticeId) : null;
+  let selected = link?.orderId
+    ? await ctx.db.get(link.orderId)
+    : !link && proactive?.shopId === receipt.shopId
+      ? await ctx.db.get(proactive.orderId)
+      : null;
   if (
     selected &&
     (selected.shopId !== receipt.shopId ||
@@ -232,8 +237,8 @@ export async function cachedOrderContext(
       selected.placedAt <= Date.now() - 365 * 86_400_000)
   )
     selected = null;
-  let automatic = false;
-  if (!link) {
+  let automatic = Boolean(!link && proactive && selected);
+  if (!link && !proactive) {
     const references = orderReferences(
       `${message.subject ?? ""}\n${message.text ?? message.snippet ?? ""}`,
     );

@@ -140,3 +140,17 @@ Uncertain requests and failed/ambiguous sends return to human handling. The read
 shows the actual response and provider acceptance status. Uses existing backend
 `OPENAI_API_KEY` and `RESEND_API_KEY`; no Shopify/17TRACK calls are made by this
 pipeline. See [behavior and staging acceptance](docs/automatic-support-replies.md).
+
+
+## Proactive delivery notifications (feature 8)
+
+The dashboard's **Surveillance des retards** compares cached orders with each
+shop's maximum promised timeframe, calendar/business days, explicit holidays and
+local daily schedule. Start in simulation to inspect candidates and blockers;
+real sending requires a recent simulation and applies only to new orders after
+activation. One notification per order uses the shared Resend transport and a
+reply alias that creates a human SAV task with the correct cached order.
+Scanning makes no Shopify/17TRACK calls. Notifications use validated templates;
+all existing AI processing remains on GPT-6 Luna. See
+[behavior and staging acceptance](docs/proactive-delivery-notifications.md),
+including the Gmail Spam placement observed during the real delivery test.

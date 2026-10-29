@@ -38,4 +38,9 @@ crons.interval(
   { minutes: 1 },
   internal.automaticReplies.recover,
 );
+crons.interval(
+  "monitor delivery promises and recover notifications",
+  { minutes: 1 },
+  internal.deliveryMonitoring.recover,
+);
 export default crons;
