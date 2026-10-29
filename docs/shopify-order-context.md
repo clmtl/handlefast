@@ -10,6 +10,13 @@ Implementation is deployed to staging for acceptance. Live merchant installation
 - All 14 deployed public assets match the staging build byte for byte. Dashboard and callback routes return HTML; the old connector file and pairing HTTP routes return 404. The signed-in dashboard shows the browser-only form. A staging connection request displayed a real device code and opened Shopify's official sign-in page for Shopify CLI; it was left awaiting the merchant's approval. The fallback was also checked locally for content types, conditional GET, HEAD and method handling.
 - 106 tests, TypeScript, lint and the staging build pass. A real Shopify device authorization was issued, polled while pending, and cancelled locally. App creation, merchant installation and real-carrier acceptance still require a merchant's approval and remain unverified.
 
+### Staging correction after merchant authorization — 2026-10-29
+
+- The merchant's CLI authorization and automatic organization lookup succeeded. Shopify rejected app creation (`SHOPIFY_APP_CREATE_REJECTED`); the generated branding name was 31 characters, exceeding Shopify CLI's 30-character branding schema limit.
+- Generated names are now capped at 30 characters and validated before the provider request. Retrying a confirmed rejection replaces an invalid legacy name in the existing operation. Ambiguous attempts retain their original names so recovery cannot create a duplicate app. The provider test now enforces Shopify's actual limit; 108 tests, TypeScript and lint pass.
+- `TRACK17_API_KEY` is configured on staging and was read back for equality without logging its value. The authenticated `v2.4/getquota` check succeeded: 200 total, 200 remaining, 0 used. The ignored local `.env.17track-staging` file is mode `0600`.
+- The 17TRACK account still needs its webhook URL set to `https://frugal-gecko-721.convex.site/webhooks/17track` and a real parcel to validate delivery updates. No test tracking number was registered and no quota was consumed by the configuration check.
+
 ## Staging deployment — 2026-10-28
 
 - Application code: `706cf0431e95c8d050456ebb735d1c7d8383fc0f` (PR #5, pending merge into `staging`).

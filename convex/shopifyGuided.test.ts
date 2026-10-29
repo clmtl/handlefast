@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, components, internal } from "./_generated/api";
 import { shopDomain } from "./lib/commerceModel";
 import { decrypt } from "./lib/commerceSecrets";
+import { appSource } from "./lib/shopifyGuidedClient";
 import { configureSupportWebhooks, SUPPORT_TOPICS } from "./lib/shopifyWebhooks";
 import schema from "./schema";
 
@@ -144,6 +145,15 @@ function provider(
         state.scope = body.variables.initialVersion.source.modules.find(
           (m: { type: string }) => m.type === "app_access",
         ).config.scopes;
+        if (state.appName.length > 30)
+          return json({
+            data: {
+              appCreate: {
+                app: null,
+                userErrors: [{ message: "Name must be less than 30 characters" }],
+              },
+            },
+          });
         if (state.fail) {
           state.fail = false;
           throw new Error("lost response with private-secret");
@@ -229,6 +239,39 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("browser-only Shopify installation", () => {
+  test("validates Shopify's 30-character app name limit before making a provider request", () => {
+    expect(appSource("https://handlefast.example", "2026-10", "a".repeat(30)).name).toHaveLength(
+      30,
+    );
+    expect(() => appSource("https://handlefast.example", "2026-10", "a".repeat(31))).toThrow(
+      "SHOPIFY_INVALID_APP_NAME",
+    );
+  });
+  test("replaces a definitively rejected legacy 31-character name when retrying the same operation", async () => {
+    const t = backend(),
+      w = await workspace(t, "name-retry"),
+      p = provider(),
+      sessionId = await authorize(w);
+    const oldName = `HandleFast ${"a".repeat(20)}`;
+    const operationId = await t.run((ctx) =>
+      ctx.db.insert("shopifyGuidedOperations", {
+        shopId: w.shopId,
+        domain: "merchant.myshopify.com",
+        shopifyOrganizationId: "27",
+        appName: oldName,
+        creationAttempted: false,
+        sessionId,
+        lease: "rejected-attempt",
+        leaseUntil: 0,
+      }),
+    );
+    await w.client.action(api.shopifyGuidedActions.provision, { sessionId });
+    expect((await w.client.query(api.shopifyGuided.get, { sessionId }))?.status).toBe("ready");
+    expect(p.state.appName.length).toBeLessThanOrEqual(30);
+    expect(p.state.appName).not.toBe(oldName);
+    expect(p.state.created).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(operationId)))?.appName).toBe(p.state.appName);
+  });
   test("authorizes in Shopify, resolves the owning organization and installs into the original HandleFast tenant", async () => {
     const t = backend(),
       w = await workspace(t, "browser"),

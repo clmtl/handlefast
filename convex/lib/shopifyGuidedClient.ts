@@ -4,6 +4,7 @@
  * Keep this adapter isolated: the App Management API is explicitly unstable.
  */
 import { z } from "zod";
+import { SHOPIFY_APP_NAME_MAX_LENGTH } from "./shopifyGuidedModel";
 
 const SHOPIFY_ACCESS_SCOPES_STRING = "read_orders";
 
@@ -275,6 +276,8 @@ export async function getStoreOrganization(token: string, shopDomain: string) {
 }
 
 export function appSource(origin: string, apiVersion: string, name = "HandleFast") {
+  if (!name.trim() || name.length > SHOPIFY_APP_NAME_MAX_LENGTH)
+    throw new GuidedShopifyError("SHOPIFY_INVALID_APP_NAME");
   return {
     name,
     modules: [

@@ -12,7 +12,7 @@ import {
 } from "./_generated/server";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { shopDomain } from "./lib/commerceModel";
-import { guidedDoc, guidedPublic } from "./lib/shopifyGuidedModel";
+import { guidedDoc, guidedPublic, SHOPIFY_APP_NAME_MAX_LENGTH } from "./lib/shopifyGuidedModel";
 import { storeConnection } from "./shopifyConnection";
 
 async function owned(ctx: QueryCtx | MutationCtx, id: Id<"shopifyGuidedSessions">) {
@@ -242,8 +242,18 @@ export const beginOperation = internalMutation({
       throw new ConvexError("ShopAlreadyConnected");
     if (previous && previous.leaseUntil > Date.now() && previous.lease !== args.lease)
       throw new ConvexError("ShopifyConnectionInProgress");
+    // Keep names stable after an ambiguous attempt: the app may already exist.
+    // A confirmed rejection can safely replace an invalid name from an older version.
     const appName =
-      previous?.appName ?? `HandleFast ${crypto.randomUUID().replaceAll("-", "").slice(0, 20)}`;
+      previous &&
+      (previous.creationAttempted ||
+        previous.clientId ||
+        previous.appName.length <= SHOPIFY_APP_NAME_MAX_LENGTH)
+        ? previous.appName
+        : `HandleFast ${crypto.randomUUID().replaceAll("-", "")}`.slice(
+            0,
+            SHOPIFY_APP_NAME_MAX_LENGTH,
+          );
     const data = {
       shopId: s.shopId,
       domain: s.domain,

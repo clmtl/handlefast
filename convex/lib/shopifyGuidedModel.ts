@@ -1,5 +1,8 @@
 import { v } from "convex/values";
 
+// Shopify CLI's branding schema limits app names to 30 characters.
+export const SHOPIFY_APP_NAME_MAX_LENGTH = 30;
+
 export const guidedStatus = v.union(
   ...(
     [
