@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx, mutation, query } from "./_generated/server";
+import { ensureHumanReview } from "./humanReviews";
 import { requireShopMembership } from "./lib/authorization";
 import {
   CLASSIFICATION_TIMEOUT_MS,
@@ -82,6 +83,7 @@ export const correct = mutation({
       classificationUpdatedAt: Date.now(),
       classificationUpdatedBy: profile._id,
     });
+    await ensureHumanReview(ctx, receiptId);
     return null;
   },
 });
@@ -183,6 +185,7 @@ async function saveAutomatic(
           classificationUpdatedBy: undefined,
         }),
   });
+  await ensureHumanReview(ctx, receipt._id);
 }
 
 export const complete = internalMutation({

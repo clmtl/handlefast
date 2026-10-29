@@ -4,6 +4,7 @@ import { Inbox, LogOut, ShieldCheck, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LoadingScreen, RequireAuth } from "@/components/auth-layout";
 import { EmailTriageInbox } from "@/components/email-triage-inbox";
+import { HumanReviewInbox } from "@/components/human-review-inbox";
 import { InboundEmailSettings } from "@/components/inbound-email-settings";
 import { ShopifySettings } from "@/components/shopify-settings";
 import { authClient } from "@/lib/auth-client";
@@ -97,6 +98,7 @@ function Dashboard() {
             </select>
           </label>
         )}
+        {shop && <HumanReviewInbox key={`reviews:${shop._id}`} shopId={shop._id} />}
         {shop && <ShopifySettings key={`shopify:${shop._id}`} shopId={shop._id} />}
         {shop && <EmailTriageInbox key={`triage:${shop._id}`} shopId={shop._id} />}
         {shop && <InboundEmailSettings key={shop._id} shopId={shop._id} />}

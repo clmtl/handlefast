@@ -61,59 +61,8 @@ export const forEmail = query({
       .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
       .unique();
     if (!message?.conversationId) return null;
-    const connection = await ctx.db
-      .query("shopifyConnections")
-      .withIndex("by_shopId", (q) => q.eq("shopId", receipt.shopId))
-      .unique();
-    if (connection?.status !== "active") return null;
-    const email = normalizedEmail(message.from.address);
-    const orders = await ctx.db
-      .query("shopifyOrders")
-      .withIndex("by_shopId_and_generation_and_email", (q) =>
-        q.eq("shopId", receipt.shopId).eq("generation", connection.generation).eq("email", email),
-      )
-      .order("desc")
-      .take(26);
-    const link = await ctx.db
-      .query("orderLinks")
-      .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
-      .unique();
-    let selected = link?.orderId ? await ctx.db.get(link.orderId) : null;
-    if (
-      selected &&
-      (selected.shopId !== receipt.shopId || selected.generation !== connection.generation)
-    )
-      selected = null;
-    let automatic = false;
-    if (!link) {
-      const references = orderReferences(
-        `${message.subject ?? ""}\n${message.text ?? message.snippet ?? ""}`,
-      );
-      const matching = orders.filter((o) => references.includes(orderName(o.name)));
-      // Require both the sender email and an explicit, unambiguous order reference.
-      if (references.length === 1 && matching.length === 1 && email) {
-        selected = matching[0];
-        automatic = true;
-      }
-    }
-    const shipments = selected
-      ? await ctx.db
-          .query("orderShipments")
-          .withIndex("by_orderId", (q) => q.eq("orderId", selected._id))
-          .take(100)
-      : [];
-    return {
-      domain: connection.domain,
-      canEdit: membership.role !== "viewer",
-      selected,
-      candidates: orders.slice(0, 25),
-      limited: orders.length > 25,
-      mode: automatic ? ("automatic" as const) : link ? ("manual" as const) : ("none" as const),
-      identityMatches: Boolean(selected?.email && selected.email === email),
-      shipments: shipments
-        .filter((s) => s.generation === connection.generation)
-        .map((s) => ({ ...s, events: s.events.slice(0, 10) })),
-    };
+    const cached = await cachedOrderContext(ctx, receipt, message);
+    return cached ? { ...cached, canEdit: membership.role !== "viewer" } : null;
   },
 });
 export const link = mutation({
@@ -251,3 +200,67 @@ export const saveLookup = internalMutation({
     return result;
   },
 });
+
+// Cache-only selection shared with the human-review assistant. Never calls a provider.
+export async function cachedOrderContext(
+  ctx: QueryCtx | MutationCtx,
+  receipt: Doc<"emailReceipts">,
+  message: Doc<"supportMessages">,
+) {
+  const connection = await ctx.db
+    .query("shopifyConnections")
+    .withIndex("by_shopId", (q) => q.eq("shopId", receipt.shopId))
+    .unique();
+  if (connection?.status !== "active") return null;
+  const email = normalizedEmail(message.from.address);
+  const orders = await ctx.db
+    .query("shopifyOrders")
+    .withIndex("by_shopId_and_generation_and_email", (q) =>
+      q.eq("shopId", receipt.shopId).eq("generation", connection.generation).eq("email", email),
+    )
+    .order("desc")
+    .take(26);
+  const link = await ctx.db
+    .query("orderLinks")
+    .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
+    .unique();
+  let selected = link?.orderId ? await ctx.db.get(link.orderId) : null;
+  if (
+    selected &&
+    (selected.shopId !== receipt.shopId ||
+      selected.generation !== connection.generation ||
+      selected.placedAt <= Date.now() - 365 * 86_400_000)
+  )
+    selected = null;
+  let automatic = false;
+  if (!link) {
+    const references = orderReferences(
+      `${message.subject ?? ""}\n${message.text ?? message.snippet ?? ""}`,
+    );
+    const matching = orders.filter(
+      (o) => references.includes(orderName(o.name)) && o.placedAt > Date.now() - 365 * 86_400_000,
+    );
+    // Require both the sender email and an explicit, unambiguous order reference.
+    if (references.length === 1 && matching.length === 1 && email) {
+      selected = matching[0];
+      automatic = true;
+    }
+  }
+  const shipments = selected
+    ? await ctx.db
+        .query("orderShipments")
+        .withIndex("by_orderId", (q) => q.eq("orderId", selected._id))
+        .take(100)
+    : [];
+  return {
+    domain: connection.domain,
+    selected,
+    candidates: orders.slice(0, 25),
+    limited: orders.length > 25,
+    mode: automatic ? ("automatic" as const) : link ? ("manual" as const) : ("none" as const),
+    identityMatches: Boolean(selected?.email && selected.email === email),
+    shipments: shipments
+      .filter((s) => s.generation === connection.generation)
+      .map((s) => ({ ...s, events: s.events.slice(0, 10) })),
+  };
+}

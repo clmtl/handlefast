@@ -2,6 +2,7 @@ import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
 import { queueClassification } from "./emailClassification";
+import { ensureHumanReview } from "./humanReviews";
 import { getOrCreateConversationId } from "./inboundEmails";
 import { requireShopMembership } from "./lib/authorization";
 import {
@@ -218,6 +219,8 @@ export const reclassify = mutation({
     if (bucket === "sav" && !receipt.classification) await queueClassification(ctx, receiptId);
     else if (bucket !== "sav" && receipt.classificationJob)
       await ctx.db.patch(receiptId, { classificationJob: undefined });
+    if (bucket === "sav") await ensureHumanReview(ctx, receiptId);
+    else if (receipt.humanReview) await ctx.db.patch(receiptId, { humanReview: undefined });
     return null;
   },
 });
