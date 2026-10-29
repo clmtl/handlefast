@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { classificationValidator } from "./emailClassificationPolicy";
 import { triageDecision } from "./emailTriagePolicy";
 
 export const receiptStatus = v.union(
@@ -30,6 +31,17 @@ export const receiptFields = {
   automaticTriage: v.optional(triageDecision),
   triageUpdatedAt: v.optional(v.number()),
   triageUpdatedBy: v.optional(v.id("profiles")),
+  classification: v.optional(classificationValidator),
+  automaticClassification: v.optional(classificationValidator),
+  classificationUpdatedAt: v.optional(v.number()),
+  classificationUpdatedBy: v.optional(v.id("profiles")),
+  classificationJob: v.optional(
+    v.object({
+      token: v.string(),
+      requestedAt: v.number(),
+      startedAt: v.optional(v.number()),
+    }),
+  ),
 };
 export const receiptDoc = v.object({
   _id: v.id("emailReceipts"),

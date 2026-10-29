@@ -109,3 +109,12 @@ Run `node scripts/smoke-email-triage.mjs` against an anonymous local backend wit
 a test OpenAI key to evaluate the synthetic corpus through signed upload, storage
 and the scheduled action. It sends no emails and refuses non-local deployments.
 The script leaves synthetic fixtures locally and makes billable model requests.
+
+## SAV categories and importance (feature 5)
+
+SAV emails receive a category, importance and French explanation after ingestion.
+The inbox and reader support manual correction; the inbox also has combinable
+category/importance filters. Uncertain or failed analyses stay visible for review,
+and manual corrections take precedence over late AI results. Existing emails can
+be analysed individually on demand. Uses the existing `OPENAI_API_KEY` and makes
+no Shopify/17TRACK calls. See [behavior and staging acceptance](docs/email-classification.md).

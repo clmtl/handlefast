@@ -1,8 +1,14 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
+import { queueClassification } from "./emailClassification";
 import { getOrCreateConversationId } from "./inboundEmails";
 import { requireShopMembership } from "./lib/authorization";
+import {
+  categoryValidator,
+  classificationValidator,
+  priorityValidator,
+} from "./lib/emailClassificationPolicy";
 import { TRIAGE_VERSION, triageBucket } from "./lib/emailTriagePolicy";
 
 export const context = internalQuery({
@@ -61,6 +67,8 @@ export const list = query({
   args: {
     shopId: v.id("shops"),
     bucket: triageBucket,
+    category: v.optional(categoryValidator),
+    priority: v.optional(priorityValidator),
     asOf: v.number(),
     paginationOpts: paginationOptsValidator,
   },
@@ -74,23 +82,48 @@ export const list = query({
         reason: v.string(),
         manual: v.boolean(),
         receivedAt: v.number(),
+        classification: v.union(classificationValidator, v.null()),
+        classificationPending: v.boolean(),
       }),
     ),
     isDone: v.boolean(),
     continueCursor: v.string(),
   }),
-  handler: async (ctx, { shopId, bucket, asOf, paginationOpts }) => {
+  handler: async (ctx, { shopId, bucket, category, priority, asOf, paginationOpts }) => {
     await requireShopMembership(ctx, shopId);
-    const result = await ctx.db
-      .query("emailReceipts")
-      .withIndex("by_shopId_and_triage_bucket_and_receivedAt", (q) =>
-        q.eq("shopId", shopId).eq("triage.bucket", bucket),
-      )
+    const receipts = ctx.db.query("emailReceipts");
+    const filtered =
+      category && priority
+        ? receipts.withIndex("by_shop_bucket_category_priority_receivedAt", (q) =>
+            q
+              .eq("shopId", shopId)
+              .eq("triage.bucket", bucket)
+              .eq("classification.category", category)
+              .eq("classification.priority", priority),
+          )
+        : category
+          ? receipts.withIndex("by_shop_bucket_category_receivedAt", (q) =>
+              q
+                .eq("shopId", shopId)
+                .eq("triage.bucket", bucket)
+                .eq("classification.category", category),
+            )
+          : priority
+            ? receipts.withIndex("by_shop_bucket_priority_receivedAt", (q) =>
+                q
+                  .eq("shopId", shopId)
+                  .eq("triage.bucket", bucket)
+                  .eq("classification.priority", priority),
+              )
+            : receipts.withIndex("by_shopId_and_triage_bucket_and_receivedAt", (q) =>
+                q.eq("shopId", shopId).eq("triage.bucket", bucket),
+              );
+    const result = await filtered
       .order("desc")
       .paginate({ ...paginationOpts, numItems: Math.min(50, paginationOpts.numItems) });
     const page = [];
     for (const receipt of result.page) {
-      if (receipt.expiresAt <= asOf) continue;
+      if (receipt.expiresAt <= Math.max(asOf, Date.now())) continue;
       const message = await ctx.db
         .query("supportMessages")
         .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
@@ -103,6 +136,8 @@ export const list = query({
         reason: receipt.triage?.reason ?? "unclear",
         manual: receipt.triage?.source === "manual",
         receivedAt: receipt.receivedAt,
+        classification: bucket === "sav" ? (receipt.classification ?? null) : null,
+        classificationPending: bucket === "sav" && Boolean(receipt.classificationJob),
       });
     }
     return { page, isDone: result.isDone, continueCursor: result.continueCursor };
@@ -180,6 +215,9 @@ export const reclassify = mutation({
       triageUpdatedAt: now,
       triageUpdatedBy: profile._id,
     });
+    if (bucket === "sav" && !receipt.classification) await queueClassification(ctx, receiptId);
+    else if (bucket !== "sav" && receipt.classificationJob)
+      await ctx.db.patch(receiptId, { classificationJob: undefined });
     return null;
   },
 });

@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
+import { queueClassification } from "./emailClassification";
 import { emailExpiresAt } from "./lib/emailPolicy";
 import { triageDecision } from "./lib/emailTriagePolicy";
 import { normalizeEmailAddress } from "./lib/inboundEmailRoutes";
@@ -248,6 +249,8 @@ export const ingestFromWorker = internalMutation({
           ? { triage: decision, automaticTriage: args.triage, triageUpdatedAt: now }
           : {}),
       });
+      if (decision?.bucket === "sav" && !receipt.classification)
+        await queueClassification(ctx, receipt._id);
     }
     await ctx.db.patch(route._id, {
       lastReceivedAt: Math.max(route.lastReceivedAt ?? 0, receivedAt),
