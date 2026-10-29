@@ -109,5 +109,30 @@ export async function resolveInboundEmailRoute(ctx: MutationCtx | QueryCtx, addr
     .query("inboundEmailRoutes")
     .withIndex("by_address", (q) => q.eq("address", address))
     .unique();
-  return route ?? (await automaticReplyRoute(ctx, address))?.route ?? null;
+  return (
+    route ??
+    (await automaticReplyRoute(ctx, address))?.route ??
+    (await delayReplyRoute(ctx, address))?.route ??
+    null
+  );
+}
+export async function delayReplyRoute(ctx: MutationCtx | QueryCtx, address: string) {
+  const match = /^hf_delay_([a-z0-9-]{36})@([^@]+)$/i.exec(address);
+  if (!match) return null;
+  const notice = await ctx.db
+    .query("delayNotices")
+    .withIndex("by_replyToken", (q) => q.eq("replyToken", match[1]))
+    .unique();
+  if (
+    !notice ||
+    notice.expiresAt <= Date.now() ||
+    !["sending", "retrying", "sent", "uncertain"].includes(notice.status) ||
+    !notice.routeId ||
+    !notice.conversationId
+  )
+    return null;
+  const route = await ctx.db.get(notice.routeId);
+  return route?.shopId === notice.shopId && route.domain === match[2].toLowerCase()
+    ? { notice, route }
+    : null;
 }

@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { automaticReplyFields, replyRule } from "./lib/automaticReplyPolicy";
 import { connectionFields, orderFields, shipmentFields } from "./lib/commerceModel";
+import { noticeFields, policyFields, versionFields } from "./lib/deliveryPolicy";
 import { receiptFields } from "./lib/emailReceiptValidators";
 import { guidedFields } from "./lib/shopifyGuidedModel";
 
@@ -47,6 +48,20 @@ const inboundEmailHeaderValidator = v.object({
 });
 
 export default defineSchema({
+  deliveryPolicies: defineTable(policyFields)
+    .index("by_shopId", ["shopId"])
+    .index("by_mode_and_nextRunAt", ["mode", "nextRunAt"]),
+  deliveryPolicyVersions: defineTable(versionFields).index("by_shopId_and_effectiveAt", [
+    "shopId",
+    "effectiveAt",
+  ]),
+  delayNotices: defineTable(noticeFields)
+    .index("by_shopId_and_orderGid", ["shopId", "orderGid"])
+    .index("by_shopId_and_attention_and_updatedAt", ["shopId", "attention", "updatedAt"])
+    .index("by_shopId_and_wasOverdue_and_updatedAt", ["shopId", "wasOverdue", "updatedAt"])
+    .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
+    .index("by_replyToken", ["replyToken"])
+    .index("by_expiresAt", ["expiresAt"]),
   shopifyGuidedSessions: defineTable(guidedFields)
     .index("by_shopId", ["shopId"])
     .index("by_profileId", ["profileId"])
@@ -85,6 +100,7 @@ export default defineSchema({
     .index("by_shopId_and_email", ["shopId", "email"])
     .index("by_shopId_and_generation_and_email", ["shopId", "generation", "email"])
     .index("by_connectionId", ["connectionId"])
+    .index("by_shopId_and_placedAt", ["shopId", "placedAt"])
     .index("by_placedAt", ["placedAt"]),
   orderLinks: defineTable({
     receiptId: v.id("emailReceipts"),
@@ -110,6 +126,7 @@ export default defineSchema({
     .index("by_rawStorageId", ["rawStorageId"])
     .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
     .index("by_shopId_and_receivedAt", ["shopId", "receivedAt"])
+    .index("by_shopId_and_status_and_receivedAt", ["shopId", "status", "receivedAt"])
     .index("by_shopId_and_triage_bucket_and_receivedAt", ["shopId", "triage.bucket", "receivedAt"])
     .index("by_shop_bucket_reviewStatus_receivedAt", [
       "shopId",
@@ -273,6 +290,7 @@ export default defineSchema({
     shopId: v.id("shops"),
     routeId: v.id("inboundEmailRoutes"),
     customerEmail: v.string(),
+    orderGid: v.optional(v.string()),
     autoReplyReservedAt: v.optional(v.number()),
     subject: v.optional(v.string()),
     status: supportConversationStatusValidator,
@@ -320,6 +338,7 @@ export default defineSchema({
     .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
     .index("by_conversationId_and_receivedAt", ["conversationId", "receivedAt"])
     .index("by_shopId_and_createdAt", ["shopId", "createdAt"])
+    .index("by_shopId_and_from_address_and_receivedAt", ["shopId", "from.address", "receivedAt"])
     .index("by_deliveryId", ["deliveryId"])
     .index("by_receiptId", ["receiptId"])
     .index("by_expiresAt", ["expiresAt"])

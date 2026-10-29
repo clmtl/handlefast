@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { env, internalAction } from "./_generated/server";
 import { planAutomaticReply } from "./lib/automaticReplyModel";
+import { deliverEmail } from "./lib/emailTransport";
 
 export const prepare = internalAction({
   args: { id: v.id("automaticReplies") },
@@ -33,45 +34,23 @@ export const send = internalAction({
   handler: async (ctx, { id }): Promise<null> => {
     const input = await ctx.runMutation(internal.automaticReplies.claimSend, { id });
     if (!input) return null;
-    try {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.RESEND_API_KEY}`,
-          "Content-Type": "application/json",
-          "Idempotency-Key": `handlefast-auto/${id}`,
-        },
-        body: JSON.stringify(input.payload),
-        signal: AbortSignal.timeout(15_000),
-        redirect: "error",
+    const result = await deliverEmail(
+      input.payload,
+      env.RESEND_API_KEY ?? "",
+      `handlefast-auto/${id}`,
+    );
+    if ("id" in result)
+      await ctx.runMutation(internal.automaticReplies.sent, {
+        id,
+        token: input.token,
+        providerId: result.id,
       });
-      if (response.ok) {
-        const data = (await response.json()) as { id?: unknown };
-        if (typeof data.id !== "string" || !data.id) throw new Error("InvalidProviderResponse");
-        await ctx.runMutation(internal.automaticReplies.sent, {
-          id,
-          token: input.token,
-          providerId: data.id,
-        });
-      } else {
-        const error = (await response.json().catch(() => null)) as { name?: string } | null;
-        const concurrent =
-          response.status === 409 && error?.name === "concurrent_idempotent_requests";
-        await ctx.runMutation(internal.automaticReplies.sendFailed, {
-          id,
-          token: input.token,
-          retryable: response.status >= 500 || response.status === 429 || concurrent,
-          definite: response.status < 500 && !concurrent,
-        });
-      }
-    } catch {
+    else
       await ctx.runMutation(internal.automaticReplies.sendFailed, {
         id,
         token: input.token,
-        retryable: true,
-        definite: false,
+        ...result,
       });
-    }
     return null;
   },
 });

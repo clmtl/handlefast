@@ -24,6 +24,7 @@ import { cachedOrderContext } from "./orderContext";
 
 async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision: number) {
   if (
+    receipt.proactiveNoticeId ||
     receipt.status !== "processed" ||
     receipt.triage?.bucket !== "sav" ||
     receipt.expiresAt <= Date.now()
