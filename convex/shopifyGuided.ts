@@ -309,18 +309,23 @@ export const handoff = internalMutation({
   handler: async (ctx, args) => {
     const { s, op } = await checked(ctx, args.sessionId, args.lease);
     if (op.clientId !== args.clientId) throw new ConvexError("ShopifySessionChanged");
-    const url = new URL(`https://${s.domain}/admin/oauth/authorize`);
+    const handle = s.domain.slice(0, -".myshopify.com".length);
+    const url = new URL(`https://admin.shopify.com/store/${handle}/oauth/authorize`);
     url.search = new URLSearchParams({
       client_id: args.clientId,
       scope: "read_orders",
       redirect_uri: `${s.origin}/auth/shopify/callback`,
       state: args.state,
     }).toString();
+    // Shopify otherwise silently reuses its current admin account, which may differ
+    // from the account that approved the CLI and have no access to this store.
+    const login = new URL("https://admin.shopify.com/login");
+    login.searchParams.set("returnPath", `${url.pathname}${url.search}`);
     await ctx.db.patch(s._id, {
       status: "ready",
       secret: args.secret,
       oauthHash: args.oauthHash,
-      authorizationUrl: url.href,
+      authorizationUrl: login.href,
       expiresAt: Date.now() + 10 * 60_000,
       lease: undefined,
       leaseUntil: undefined,

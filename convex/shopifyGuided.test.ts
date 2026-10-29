@@ -228,6 +228,12 @@ async function callbackQuery(state: string) {
   params.set("hmac", Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""));
   return params.toString();
 }
+function installationRequest(authorizationUrl: string | undefined) {
+  const login = new URL(authorizationUrl ?? "");
+  expect(login.origin).toBe("https://admin.shopify.com");
+  expect(login.pathname).toBe("/login");
+  return new URL(login.searchParams.get("returnPath") ?? "", login.origin);
+}
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubEnv("COMMERCE_ENCRYPTION_KEY", btoa("k".repeat(32)));
@@ -286,8 +292,12 @@ describe("browser-only Shopify installation", () => {
     expect(p.state.organizationId).toBe("gid://shopify/Organization/27");
     expect(p.state.scope).toBe("read_orders");
     expect(await t.run((ctx) => ctx.db.query("shopifyConnections").first())).toBeNull();
-    const url = new URL(ready?.authorizationUrl ?? "");
-    expect(url.hostname).toBe("merchant.myshopify.com");
+    const url = installationRequest(ready?.authorizationUrl);
+    expect(url.origin).toBe("https://admin.shopify.com");
+    expect(url.pathname).toBe("/store/merchant/oauth/authorize");
+    expect(url.searchParams.get("client_id")).toBe("a".repeat(32));
+    expect(url.searchParams.get("scope")).toBe("read_orders");
+    expect(url.searchParams.get("state")).toMatch(/^[a-f0-9]{64}$/);
     expect(url.searchParams.get("redirect_uri")).toBe(
       "https://handlefast-staging.example/auth/shopify/callback",
     );
@@ -329,7 +339,7 @@ describe("browser-only Shopify installation", () => {
       sessionId = await authorize(w);
     await w.client.action(api.shopifyGuidedActions.provision, { sessionId });
     const s = await w.client.query(api.shopifyGuided.get, { sessionId });
-    const state = new URL(s?.authorizationUrl ?? "").searchParams.get("state") ?? "";
+    const state = installationRequest(s?.authorizationUrl).searchParams.get("state") ?? "";
     const good = await callbackQuery(state),
       before = p.fetcher.mock.calls.length;
     await expect(
@@ -355,7 +365,7 @@ describe("browser-only Shopify installation", () => {
     await w.client.action(api.shopifyGuidedActions.provision, { sessionId });
     const s = await w.client.query(api.shopifyGuided.get, { sessionId }),
       query = await callbackQuery(
-        new URL(s?.authorizationUrl ?? "").searchParams.get("state") ?? "",
+        installationRequest(s?.authorizationUrl).searchParams.get("state") ?? "",
       );
     await t.run(async (ctx) => {
       const m = await ctx.db
