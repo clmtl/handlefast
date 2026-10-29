@@ -34,7 +34,13 @@ const orderStatuses: Record<string, string> = {
   SCHEDULED: "Expédition planifiée",
   UNKNOWN: "Information indisponible",
 };
-export function OrderContext({ receiptId }: { receiptId: Id<"emailReceipts"> }) {
+export function OrderContext({
+  receiptId,
+  refreshOnOpen = true,
+}: {
+  receiptId: Id<"emailReceipts">;
+  refreshOnOpen?: boolean;
+}) {
   const context = useQuery(api.orderContext.forEmail, { receiptId });
   const lookup = useAction(api.orderContext.lookup);
   const link = useMutation(api.orderContext.link);
@@ -45,7 +51,7 @@ export function OrderContext({ receiptId }: { receiptId: Id<"emailReceipts"> }) 
   const [notice, setNotice] = useState("");
   const refreshed = useRef(false);
   useEffect(() => {
-    if (!context?.canEdit || refreshed.current) return;
+    if (!refreshOnOpen || !context?.canEdit || refreshed.current) return;
     refreshed.current = true;
     setBusy(true);
     void lookup({ receiptId })
@@ -53,7 +59,7 @@ export function OrderContext({ receiptId }: { receiptId: Id<"emailReceipts"> }) 
         setError("Actualisation indisponible. Les informations affichées peuvent être anciennes."),
       )
       .finally(() => setBusy(false));
-  }, [context?.canEdit, lookup, receiptId]);
+  }, [context?.canEdit, lookup, receiptId, refreshOnOpen]);
   async function perform(task: () => Promise<unknown>) {
     setBusy(true);
     setError("");
@@ -85,6 +91,11 @@ export function OrderContext({ receiptId }: { receiptId: Id<"emailReceipts"> }) 
           </button>
         )}
       </div>
+      {!refreshOnOpen && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Dernières informations enregistrées. Actualisez pour vérifier les changements récents.
+        </p>
+      )}
       {error && (
         <p role="alert" className="mt-3 text-sm text-destructive">
           {error}

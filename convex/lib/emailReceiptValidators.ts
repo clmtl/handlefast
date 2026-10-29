@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { classificationValidator } from "./emailClassificationPolicy";
 import { triageDecision } from "./emailTriagePolicy";
+import { humanReviewValidator } from "./humanReviewPolicy";
 
 export const receiptStatus = v.union(
   v.literal("uploading"),
@@ -35,6 +36,7 @@ export const receiptFields = {
   automaticClassification: v.optional(classificationValidator),
   classificationUpdatedAt: v.optional(v.number()),
   classificationUpdatedBy: v.optional(v.id("profiles")),
+  humanReview: v.optional(humanReviewValidator),
   classificationJob: v.optional(
     v.object({
       token: v.string(),

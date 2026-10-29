@@ -118,3 +118,12 @@ category/importance filters. Uncertain or failed analyses stay visible for revie
 and manual corrections take precedence over late AI results. Existing emails can
 be analysed individually on demand. Uses the existing `OPENAI_API_KEY` and makes
 no Shopify/17TRACK calls. See [behavior and staging acceptance](docs/email-classification.md).
+
+## Human support assistance (feature 6)
+
+New SAV receipts create an alert in **Demandes à traiter**, then GPT-6 Luna
+prepares a French summary and suggested solution with a draft in the customer's
+language. Staff can edit/save/copy the draft and take charge, mark treated or
+reopen the request. Generation preserves human edits and reports missing/stale
+context. It uses cached order/parcel information and the existing backend-only
+`OPENAI_API_KEY`. See [behavior and staging acceptance](docs/human-support-assistance.md).

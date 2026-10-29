@@ -106,6 +106,12 @@ export default defineSchema({
     .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
     .index("by_shopId_and_receivedAt", ["shopId", "receivedAt"])
     .index("by_shopId_and_triage_bucket_and_receivedAt", ["shopId", "triage.bucket", "receivedAt"])
+    .index("by_shop_bucket_reviewStatus_receivedAt", [
+      "shopId",
+      "triage.bucket",
+      "humanReview.status",
+      "receivedAt",
+    ])
     .index("by_shop_bucket_category_receivedAt", [
       "shopId",
       "triage.bucket",

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { EmailClassification } from "./email-classification";
+import { HumanReviewPanel } from "./human-review-panel";
 import { OrderContext } from "./order-context";
 
 const button =
@@ -298,9 +299,11 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
 export function EmailReader({
   receiptId,
   close,
+  refreshOrderOnOpen = true,
 }: {
   receiptId: Id<"emailReceipts">;
   close: () => void;
+  refreshOrderOnOpen?: boolean;
 }) {
   const download = useAction(api.emailInbox.download);
   const [content, setContent] = useState<{
@@ -444,8 +447,9 @@ export function EmailReader({
           </>
         )}
         <EmailClassification receiptId={receiptId} />
+        <HumanReviewPanel receiptId={receiptId} />
       </section>
-      <OrderContext receiptId={receiptId} />
+      <OrderContext receiptId={receiptId} refreshOnOpen={refreshOrderOnOpen} />
     </div>
   );
 }
