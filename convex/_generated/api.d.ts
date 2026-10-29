@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as commerceAcceptance from "../commerceAcceptance.js";
 import type * as commerceHttp from "../commerceHttp.js";
 import type * as commerceMaintenance from "../commerceMaintenance.js";
 import type * as crons from "../crons.js";
@@ -55,6 +56,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  commerceAcceptance: typeof commerceAcceptance;
   commerceHttp: typeof commerceHttp;
   commerceMaintenance: typeof commerceMaintenance;
   crons: typeof crons;
