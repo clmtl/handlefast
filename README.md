@@ -1,5 +1,9 @@
 # handlefast
 
+## Shopify order context and 17TRACK (feature 4)
+
+Merchants connect entirely in the browser: enter the Shopify link, approve the Shopify CLI device code, return to HandleFast, then approve installation. The backend resolves the store's Shopify organization, creates a merchant-owned app and binds the verified callback to the existing HandleFast organization. No client download or terminal is required. SAV emails show matching orders and parcel histories with manual correction. Both provider keys are configured in staging. Live association, manual correction, Shopify token renewal and a real 17TRACK push passed acceptance with zero additional tracking credits. See [setup, limits and live acceptance](docs/shopify-order-context.md).
+
 ## Inbound support email (feature 2)
 
 Implemented on `feature/inbound-email-routing` and deployed to the dedicated staging environment. Real Gmail forwarding, attachment integrity, threading, pause/resume, size limits and outage recovery passed acceptance. Feature 2 is checked in `FEATURES.md`; the integration target is `staging`, before any production promotion.

@@ -3,12 +3,15 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
+import { shopifyWebhook, trackingWebhook } from "./commerceHttp";
 import { verifyWebhookSignature } from "./lib/webhookSignatures";
 
 const http = httpRouter();
 const maxWebhookBytes = 16_384;
 
 authComponent.registerRoutes(http, createAuth);
+http.route({ path: "/webhooks/shopify", method: "POST", handler: shopifyWebhook });
+http.route({ path: "/webhooks/17track", method: "POST", handler: trackingWebhook });
 
 http.route({
   path: "/webhooks/cloudflare/email-routing",
