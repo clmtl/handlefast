@@ -37,6 +37,8 @@ export const receiptFields = {
   classificationUpdatedAt: v.optional(v.number()),
   classificationUpdatedBy: v.optional(v.id("profiles")),
   humanReview: v.optional(humanReviewValidator),
+  autoReplyEligibility: v.optional(v.object({ eligible: v.boolean(), revision: v.number() })),
+  automaticReplySuppressed: v.optional(v.boolean()),
   classificationJob: v.optional(
     v.object({
       token: v.string(),

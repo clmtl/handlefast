@@ -132,8 +132,11 @@ export function orderReferences(text: string) {
           .matchAll(
             /(?:#|(?:commande|order)\s*(?:n[°o.]?\s*)?[:#-]?\s*)([A-Z0-9][A-Z0-9-]{2,30})/gi,
           ),
-        (m) => m[1].toUpperCase(),
-      ),
+        (m) =>
+          m[0].includes("#") || /\d/.test(m[1]) || m[1] === m[1].toUpperCase()
+            ? m[1].toUpperCase()
+            : "",
+      ).filter(Boolean),
     ),
   ].slice(0, 10);
 }

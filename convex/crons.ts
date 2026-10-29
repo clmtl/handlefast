@@ -33,4 +33,9 @@ crons.interval(
   internal.emailRetention.reconcileUploads,
 );
 crons.interval("expire emails after twelve months", { hours: 1 }, internal.emailRetention.sweep);
+crons.interval(
+  "recover automatic support replies",
+  { minutes: 1 },
+  internal.automaticReplies.recover,
+);
 export default crons;

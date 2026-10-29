@@ -70,6 +70,11 @@ export const expireReceipt = internalMutation({
       .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
       .unique();
     if (orderLink) await ctx.db.delete(orderLink._id);
+    const reply = await ctx.db
+      .query("automaticReplies")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
+      .unique();
+    if (reply) await ctx.db.delete(reply._id);
     await ctx.db.delete(receiptId);
     return null;
   },

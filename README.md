@@ -121,9 +121,22 @@ no Shopify/17TRACK calls. See [behavior and staging acceptance](docs/email-class
 
 ## Human support assistance (feature 6)
 
-New SAV receipts create an alert in **Demandes à traiter**, then GPT-6 Luna
+New SAV receipts requiring human handling create an alert in **Demandes à traiter**, then GPT-6 Luna
 prepares a French summary and suggested solution with a draft in the customer's
 language. Staff can edit/save/copy the draft and take charge, mark treated or
 reopen the request. Generation preserves human edits and reports missing/stale
 context. It uses cached order/parcel information and the existing backend-only
 `OPENAI_API_KEY`. See [behavior and staging acceptance](docs/human-support-assistance.md).
+
+
+## Automatic support replies (feature 7)
+
+Owners/admins can enable replies for explicit category/importance combinations per
+shop. Rules apply to future receipts only; automation starts disabled. GPT-6 Luna
+selects a bounded response type, rendered from French/English/Spanish templates
+using cached facts. Resend sends the reply with stable idempotency; individual
+Reply-To aliases preserve conversations across provider Message-ID rewrites.
+Uncertain requests and failed/ambiguous sends return to human handling. The reader
+shows the actual response and provider acceptance status. Uses existing backend
+`OPENAI_API_KEY` and `RESEND_API_KEY`; no Shopify/17TRACK calls are made by this
+pipeline. See [behavior and staging acceptance](docs/automatic-support-replies.md).

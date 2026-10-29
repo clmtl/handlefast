@@ -1,6 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { cachedOrderContext } from "../orderContext";
+import { matchesRule } from "./automaticReplyPolicy";
 import { type ReviewWarning, replyBlockReason } from "./humanReviewPolicy";
 
 export async function humanReviewContext(
@@ -72,7 +73,18 @@ export async function humanReviewContext(
         break;
       }
     }
-  const reason = replyBlockReason(settings?.autoReplyEnabled ?? false, receipt.classification);
+  const automatic = await ctx.db
+    .query("automaticReplies")
+    .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
+    .unique();
+  const reason =
+    automatic && ["failed", "uncertain", "cancelled"].includes(automatic.status)
+      ? ("automatic_unavailable" as const)
+      : replyBlockReason(
+          settings?.autoReplyEnabled ?? false,
+          receipt.classification,
+          matchesRule(settings?.autoReplyRules, receipt.classification),
+        );
   // Capture only the chosen order, never broad candidates or private delivery addresses.
   const prompt = JSON.stringify({
     email: { subject: message?.subject?.slice(0, 500) ?? "", body: body.slice(0, 6000), previous },
@@ -130,5 +142,6 @@ export async function humanReviewContext(
     warnings,
     empty: !body,
     tooLarge: new TextEncoder().encode(prompt).length > 32_000,
+    orderSyncedAt: usable?.syncedAt ?? null,
   };
 }

@@ -9,7 +9,7 @@ import {
   RAW_EMAIL_CONTENT_TYPE,
 } from "./lib/emailPolicy";
 import { receiptDoc } from "./lib/emailReceiptValidators";
-import { normalizeEmailAddress } from "./lib/inboundEmailRoutes";
+import { normalizeEmailAddress, resolveInboundEmailRoute } from "./lib/inboundEmailRoutes";
 
 export const reserve = internalMutation({
   args: {
@@ -39,10 +39,7 @@ export const reserve = internalMutation({
       throw new ConvexError("InvalidEmailUpload");
     }
     const envelopeTo = normalizeEmailAddress(args.envelopeTo);
-    const route = await ctx.db
-      .query("inboundEmailRoutes")
-      .withIndex("by_address", (q) => q.eq("address", envelopeTo))
-      .unique();
+    const route = await resolveInboundEmailRoute(ctx, envelopeTo);
     const shop = route ? await ctx.db.get(route.shopId) : null;
     if (route?.status !== "active" || !shop || shop.status === "disabled")
       return { status: "rejected" as const };

@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx, mutation, query } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
+import { activeAutoReply } from "./lib/automaticReplyPolicy";
 import { categoryValidator, priorityValidator } from "./lib/emailClassificationPolicy";
 import { humanReviewContext } from "./lib/humanReviewContext";
 import {
@@ -28,6 +29,11 @@ export async function ensureHumanReview(
     receipt.expiresAt <= Date.now()
   )
     return;
+  const automatic = await ctx.db
+    .query("automaticReplies")
+    .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
+    .unique();
+  if (automatic && activeAutoReply.has(automatic.status)) return;
   const context = await humanReviewContext(ctx, receipt);
   const now = Date.now();
   let review = receipt.humanReview ?? {
@@ -57,6 +63,12 @@ async function editableReview(ctx: MutationCtx, receiptId: Id<"emailReceipts">) 
   if (auth.membership.role === "viewer") throw new ConvexError("Forbidden");
   if (receipt.triage?.bucket !== "sav" || receipt.status !== "processed")
     throw new ConvexError("NotSupportEmail");
+  const automatic = await ctx.db
+    .query("automaticReplies")
+    .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
+    .unique();
+  if (automatic && activeAutoReply.has(automatic.status))
+    throw new ConvexError("AutomaticReplyActive");
   return { ...auth, receipt };
 }
 
@@ -64,8 +76,13 @@ export const request = mutation({
   args: { receiptId: v.id("emailReceipts") },
   returns: v.null(),
   handler: async (ctx, { receiptId }) => {
-    await editableReview(ctx, receiptId);
+    const { profile } = await editableReview(ctx, receiptId);
     await ensureHumanReview(ctx, receiptId, true);
+    const receipt = await ctx.db.get(receiptId);
+    if (receipt?.humanReview)
+      await ctx.db.patch(receiptId, {
+        humanReview: { ...receipt.humanReview, updatedBy: profile._id, updatedAt: Date.now() },
+      });
     return null;
   },
 });
@@ -123,6 +140,11 @@ export const get = query({
     if (!receipt || receipt.expiresAt <= Date.now()) return null;
     const { membership } = await requireShopMembership(ctx, receipt.shopId);
     if (receipt.triage?.bucket !== "sav" || receipt.status !== "processed") return null;
+    const automatic = await ctx.db
+      .query("automaticReplies")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
+      .unique();
+    if (automatic && activeAutoReply.has(automatic.status)) return null;
     const context = await humanReviewContext(ctx, receipt);
     return {
       review: receipt.humanReview ?? null,

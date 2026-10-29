@@ -9,6 +9,9 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as automaticReplies from "../automaticReplies.js";
+import type * as automaticReplyProcessing from "../automaticReplyProcessing.js";
+import type * as automaticReplySettings from "../automaticReplySettings.js";
 import type * as commerceAcceptance from "../commerceAcceptance.js";
 import type * as commerceHttp from "../commerceHttp.js";
 import type * as commerceMaintenance from "../commerceMaintenance.js";
@@ -27,6 +30,8 @@ import type * as inboundEmailRoutes from "../inboundEmailRoutes.js";
 import type * as inboundEmails from "../inboundEmails.js";
 import type * as launchPreferences from "../launchPreferences.js";
 import type * as lib_authorization from "../lib/authorization.js";
+import type * as lib_automaticReplyModel from "../lib/automaticReplyModel.js";
+import type * as lib_automaticReplyPolicy from "../lib/automaticReplyPolicy.js";
 import type * as lib_commerceModel from "../lib/commerceModel.js";
 import type * as lib_commerceProviders from "../lib/commerceProviders.js";
 import type * as lib_commerceSecrets from "../lib/commerceSecrets.js";
@@ -65,6 +70,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  automaticReplies: typeof automaticReplies;
+  automaticReplyProcessing: typeof automaticReplyProcessing;
+  automaticReplySettings: typeof automaticReplySettings;
   commerceAcceptance: typeof commerceAcceptance;
   commerceHttp: typeof commerceHttp;
   commerceMaintenance: typeof commerceMaintenance;
@@ -83,6 +91,8 @@ declare const fullApi: ApiFromModules<{
   inboundEmails: typeof inboundEmails;
   launchPreferences: typeof launchPreferences;
   "lib/authorization": typeof lib_authorization;
+  "lib/automaticReplyModel": typeof lib_automaticReplyModel;
+  "lib/automaticReplyPolicy": typeof lib_automaticReplyPolicy;
   "lib/commerceModel": typeof lib_commerceModel;
   "lib/commerceProviders": typeof lib_commerceProviders;
   "lib/commerceSecrets": typeof lib_commerceSecrets;

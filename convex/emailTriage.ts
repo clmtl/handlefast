@@ -1,8 +1,8 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
+import { cancelAutomaticReply, routeSupportReply } from "./automaticReplies";
 import { queueClassification } from "./emailClassification";
-import { ensureHumanReview } from "./humanReviews";
 import { getOrCreateConversationId } from "./inboundEmails";
 import { requireShopMembership } from "./lib/authorization";
 import {
@@ -175,9 +175,11 @@ export const reclassify = mutation({
     const route = await ctx.db.get(receipt.routeId);
     if (!message || !route) throw new ConvexError("EmailUnavailable");
     const now = Date.now();
+    await cancelAutomaticReply(ctx, receiptId);
     if (bucket === "sav" && !message.conversationId) {
       const conversationId = await getOrCreateConversationId(ctx, {
         route,
+        replyAddress: receipt.envelopeTo,
         customerEmail: message.from.address,
         subject: message.subject ?? null,
         inReplyTo: message.inReplyTo ?? null,
@@ -219,7 +221,7 @@ export const reclassify = mutation({
     if (bucket === "sav" && !receipt.classification) await queueClassification(ctx, receiptId);
     else if (bucket !== "sav" && receipt.classificationJob)
       await ctx.db.patch(receiptId, { classificationJob: undefined });
-    if (bucket === "sav") await ensureHumanReview(ctx, receiptId);
+    if (bucket === "sav") await routeSupportReply(ctx, receiptId);
     else if (receipt.humanReview) await ctx.db.patch(receiptId, { humanReview: undefined });
     return null;
   },
