@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { env, internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { shipmentFields, trackingUpdate } from "./lib/commerceModel";
 import { normalizeTracking, track17 } from "./lib/commerceProviders";
+import { permittedTestParcel } from "./lib/localTesting";
 
 export const claim = internalMutation({
   args: {},
@@ -17,9 +18,19 @@ export const claim = internalMutation({
         q.eq("active", true).lte("nextAttemptAt", Date.now()),
       )
       .take(20);
-    for (const row of rows)
+    const allowed = [];
+    for (const row of rows) {
+      if (!permittedTestParcel(row.number, env.TRACK17_TEST_NUMBERS)) {
+        await ctx.db.patch(row._id, {
+          error: "TrackingTestLimit",
+          nextAttemptAt: Date.now() + 24 * 3600_000,
+        });
+        continue;
+      }
       await ctx.db.patch(row._id, { nextAttemptAt: Date.now() + 10 * 60_000 });
-    return rows;
+      allowed.push(row);
+    }
+    return allowed;
   },
 });
 export const poll = internalAction({
@@ -48,6 +59,7 @@ export const shipment = internalQuery({
     const connection = row ? await ctx.db.get(row.connectionId) : null;
     const shop = row ? await ctx.db.get(row.shopId) : null;
     return row?.active &&
+      permittedTestParcel(row.number, env.TRACK17_TEST_NUMBERS) &&
       row.generation === args.generation &&
       connection?.status === "active" &&
       connection.generation === args.generation &&

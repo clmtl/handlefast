@@ -312,6 +312,51 @@ describe("support order context", () => {
   });
 });
 describe("shipment updates", () => {
+  test("a five-parcel restriction blocks both scheduled and direct provider access for every other parcel", async () => {
+    const numbers = ["QA1", "QA2", "QA3", "QA4", "QA5"];
+    vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
+    vi.stubEnv("TRACK17_TEST_NUMBERS", JSON.stringify(numbers));
+    const t = backend(),
+      w = await workspace(t, "tracking-cap"),
+      { row } = await connect(t, w);
+    await t.mutation(internal.orderContext.saveLookup, {
+      connectionId: row._id,
+      generation: row.generation,
+      orders: [
+        {
+          ...order(),
+          tracking: [...numbers, "QA6"].map((number) => ({
+            number,
+            company: "Carrier",
+            fulfillmentId: number,
+          })),
+        },
+      ],
+    });
+    const claimed = await t.mutation(internal.orderTracking.claim, {});
+    expect(claimed.map((shipment) => shipment.number).sort()).toEqual(numbers);
+    const excluded = await t.run((ctx) =>
+      ctx.db
+        .query("orderShipments")
+        .withIndex("by_number", (q) => q.eq("number", "QA6"))
+        .first(),
+    );
+    if (!excluded) throw new Error("Missing excluded shipment");
+    expect(excluded.error).toBe("TrackingTestLimit");
+    const calls = vi.fn();
+    vi.stubGlobal("fetch", calls);
+    await t.action(internal.orderTracking.refresh, {
+      shipmentId: excluded._id,
+      generation: row.generation,
+    });
+    expect(calls).not.toHaveBeenCalled();
+    vi.stubEnv("TRACK17_TEST_NUMBERS", "invalid-json");
+    await t.action(internal.orderTracking.refresh, {
+      shipmentId: claimed[0]._id,
+      generation: row.generation,
+    });
+    expect(calls).not.toHaveBeenCalled();
+  });
   test("authenticates webhooks, preserves fresher history and ignores disconnected shipments", async () => {
     vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
     const t = backend(),

@@ -30,10 +30,12 @@ type Env = {
   readonly CLOUDFLARE_EMAIL_WEBHOOK_SECRET: string | undefined;
   readonly COMMERCE_ENCRYPTION_KEY: string | undefined;
   readonly INBOUND_EMAIL_DOMAIN: string | undefined;
+  readonly LOCAL_TEST_ORIGINS: string | undefined;
   readonly OPENAI_API_KEY: string | undefined;
   readonly RESEND_API_KEY: string | undefined;
   readonly SITE_URL: string;
   readonly TRACK17_API_KEY: string | undefined;
+  readonly TRACK17_TEST_NUMBERS: string | undefined;
 };
 
 /**
