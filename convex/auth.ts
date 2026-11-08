@@ -6,12 +6,14 @@ import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { env } from "./_generated/server";
 import authConfig from "./auth.config";
+import { localTestOrigins } from "./lib/localTesting";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth({
     baseURL: env.SITE_URL,
+    trustedOrigins: localTestOrigins(env.LOCAL_TEST_ORIGINS),
     secret: env.BETTER_AUTH_SECRET,
     database: authComponent.adapter(ctx),
     emailVerification: {

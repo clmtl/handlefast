@@ -11,6 +11,8 @@ const app = defineApp({
     INBOUND_EMAIL_DOMAIN: v.optional(v.string()),
     RESEND_API_KEY: v.optional(v.string()),
     SITE_URL: v.string(),
+    LOCAL_TEST_ORIGINS: v.optional(v.string()),
+    TRACK17_TEST_NUMBERS: v.optional(v.string()),
     OPENAI_API_KEY: v.optional(v.string()),
     COMMERCE_ENCRYPTION_KEY: v.optional(v.string()),
     TRACK17_API_KEY: v.optional(v.string()),

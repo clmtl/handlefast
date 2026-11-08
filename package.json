@@ -6,6 +6,7 @@
   "sideEffects": false,
   "scripts": {
     "dev": "vite dev",
+    "dev:connected": "node scripts/dev-connected.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",

@@ -299,7 +299,9 @@ function Shipment({ shipment }: { shipment: Doc<"orderShipments"> }) {
       </p>
       {shipment.error && (
         <p className="mt-2 text-xs text-destructive">
-          Suivi temporairement indisponible. Nouvelle tentative prévue.
+          {shipment.error === "TrackingTestLimit"
+            ? "Actualisation suspendue : ce colis ne fait pas partie des 5 colis de test autorisés."
+            : "Suivi temporairement indisponible. Nouvelle tentative prévue."}
         </p>
       )}
       <ol className="mt-3 space-y-3 border-l pl-3">
