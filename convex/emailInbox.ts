@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import { action, env, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalQuery, mutation, query } from "./_generated/server";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { receiptDoc, receiptStatus } from "./lib/emailReceiptValidators";
 import { verifiedShopSender } from "./lib/shopSender";
@@ -43,7 +43,7 @@ export const connection = query({
     return {
       address: route?.address ?? null,
       supportEmail: shop.supportEmail ?? "",
-      sendingAddress: env.RESEND_API_KEY ? verifiedShopSender(shop) : null,
+      sendingAddress: verifiedShopSender(shop),
       enabled: route?.status === "active" && shop.status !== "disabled",
       shopDisabled: shop.status === "disabled",
       verified: Boolean(

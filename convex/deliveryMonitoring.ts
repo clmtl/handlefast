@@ -94,7 +94,7 @@ export const get = query({
         : null,
       canManage: ["owner", "admin"].includes(membership.role),
       approvalRequired: env.REQUIRE_EMAIL_APPROVAL === "true",
-      configured: Boolean(env.RESEND_API_KEY && verifiedShopSender(shop)),
+      configured: Boolean(verifiedShopSender(shop)),
     };
   },
 });
@@ -130,7 +130,6 @@ export const save = mutation({
         .withIndex("by_shopId_and_status", (q) => q.eq("shopId", shopId).eq("status", "active"))
         .first();
       if (
-        !env.RESEND_API_KEY ||
         !verifiedShopSender(shop) ||
         shop.status === "disabled" ||
         connection?.status !== "active" ||
@@ -238,7 +237,7 @@ export const list = query({
       .paginate({ ...paginationOpts, numItems: Math.min(25, paginationOpts.numItems) });
     const page = [];
     const shop = await ctx.db.get(shopId);
-    const canSend = Boolean(env.RESEND_API_KEY && verifiedShopSender(shop));
+    const canSend = Boolean(verifiedShopSender(shop));
     for (const row of result.page) {
       if (row.expiresAt <= Date.now()) continue;
       page.push({
@@ -328,7 +327,6 @@ export const scanPage = internalMutation({
       });
       if (
         !simulation &&
-        env.RESEND_API_KEY &&
         env.REQUIRE_EMAIL_APPROVAL !== "true" &&
         reason === "eligible" &&
         !row.cancelledBy &&
@@ -488,8 +486,7 @@ export const approve = mutation({
       row.placedAt < (policy.liveFrom ?? Infinity) ||
       row.attempts > 0 ||
       (row.status !== "none" && row.status !== "cancelled") ||
-      row.cancelledBy ||
-      !env.RESEND_API_KEY
+      row.cancelledBy
     )
       throw new ConvexError("NotificationUnavailable");
     const info = await inspectDelivery(ctx, row);
@@ -551,12 +548,7 @@ export const claimSend = internalMutation({
       await stop(ctx, row, "policy_changed");
       return null;
     }
-    if (
-      !env.RESEND_API_KEY ||
-      (row.sendDeadline ?? 0) <= Date.now() ||
-      row.expiresAt <= Date.now() ||
-      row.attempts >= 3
-    ) {
+    if ((row.sendDeadline ?? 0) <= Date.now() || row.expiresAt <= Date.now() || row.attempts >= 3) {
       await stop(ctx, row, "expired");
       return null;
     }

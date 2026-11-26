@@ -9,6 +9,11 @@ exemple `{"shopId":"support@example.com"}`. L’adresse doit aussi être enregis
 dans **Réception email**. Un changement d’adresse demande une nouvelle autorisation.
 La confirmation du transfert entrant ne donne aucune permission d’envoi.
 
+`RESEND_SHOP_API_KEYS` est un objet JSON qui associe chaque domaine à sa clé
+Resend d’envoi, limitée à ce domaine. Enregistrer ces clés uniquement dans les
+variables d’environnement du déploiement Convex. `RESEND_API_KEY` sert aux
+e-mails de connexion.
+
 ## Test local avec les connexions existantes
 
 `npm ci`, puis `npm run dev:connected` ouvre l’interface sur

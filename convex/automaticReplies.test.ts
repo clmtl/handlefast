@@ -13,6 +13,7 @@ import {
 } from "./lib/automaticReplyPolicy";
 import { orderReferences } from "./lib/commerceModel";
 import type { Classification } from "./lib/emailClassificationPolicy";
+import { deliverEmail } from "./lib/emailTransport";
 import schema from "./schema";
 
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
@@ -30,13 +31,42 @@ const plan: ReplyPlan = { intent: "reference", language: "fr", confidence: 0.99 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubEnv("OPENAI_API_KEY", "synthetic");
-  vi.stubEnv("RESEND_API_KEY", "synthetic");
+  vi.stubEnv("RESEND_SHOP_API_KEYS", JSON.stringify({ "fixture.example": "re_fixture" }));
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
+
+test("shop mail uses the key for its sender domain and never falls back to the login key", async () => {
+  vi.stubEnv("RESEND_API_KEY", "re_login");
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json({ id: "fixture-id" }));
+  vi.stubGlobal("fetch", fetchMock);
+  const payload = {
+    from: "sav@fixture.example",
+    to: ["recipient@example.com"],
+    reply_to: "reply@handlefast.io",
+    subject: "Test",
+    text: "Test",
+    headers: {},
+  };
+  await expect(deliverEmail(payload, "fixture")).resolves.toEqual({ id: "fixture-id" });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "https://api.resend.com/emails",
+    expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: "Bearer re_fixture" }),
+    }),
+  );
+  await expect(deliverEmail({ ...payload, from: "sav@another.example" }, "other")).resolves.toEqual(
+    {
+      retryable: false,
+      definite: true,
+    },
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 function createBackend() {
   const t = convexTest({ schema, modules });
   betterAuthTest.register(t);

@@ -12,6 +12,7 @@ const app = defineApp({
     INBOUND_EMAIL_DOMAIN: v.optional(v.string()),
     REQUIRE_EMAIL_APPROVAL: v.optional(v.string()),
     RESEND_API_KEY: v.optional(v.string()),
+    RESEND_SHOP_API_KEYS: v.optional(v.string()),
     VERIFIED_SHOP_SENDERS: v.optional(v.string()),
     SITE_URL: v.string(),
     LOCAL_TEST_ORIGINS: v.optional(v.string()),

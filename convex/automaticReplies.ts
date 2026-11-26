@@ -59,8 +59,7 @@ async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision
   )
     return { blocked: "reception_disabled" } as const;
   const from = verifiedShopSender(shop);
-  if (!env.RESEND_API_KEY || !env.OPENAI_API_KEY || !from)
-    return { blocked: "provider_unavailable" } as const;
+  if (!env.OPENAI_API_KEY || !from) return { blocked: "provider_unavailable" } as const;
   const classification = receipt.classification;
   if (
     classification?.source !== "ai" ||
@@ -244,14 +243,7 @@ export const approveManual = mutation({
     if (membership.role !== "owner") throw new ConvexError("Forbidden");
     const target = await manualReplyTarget(ctx, receipt);
     const body = text.trim();
-    if (
-      !target ||
-      !env.RESEND_API_KEY ||
-      !body ||
-      body.length > 6000 ||
-      target.to !== to ||
-      target.from !== from
-    )
+    if (!target || !body || body.length > 6000 || target.to !== to || target.from !== from)
       throw new ConvexError("ManualReplyUnavailable");
     const existing = await ctx.db
       .query("automaticReplies")
@@ -502,7 +494,6 @@ export const claimSend = internalMutation({
     if (row.approvedBy) {
       const target = await manualReplyTarget(ctx, receipt);
       if (
-        !env.RESEND_API_KEY ||
         !target ||
         target.from !== row.payload.from ||
         target.to !== row.payload.to[0] ||

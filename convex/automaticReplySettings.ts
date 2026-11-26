@@ -25,7 +25,7 @@ export const get = query({
       rules: policy.rules,
       canManage: ["owner", "admin"].includes(membership.role),
       approvalRequired: env.REQUIRE_EMAIL_APPROVAL === "true",
-      configured: Boolean(env.RESEND_API_KEY && env.OPENAI_API_KEY && verifiedShopSender(shop)),
+      configured: Boolean(env.OPENAI_API_KEY && verifiedShopSender(shop)),
     };
   },
 });
@@ -43,7 +43,6 @@ export const save = mutation({
     if (
       enabled &&
       (!rules.length ||
-        !env.RESEND_API_KEY ||
         !env.OPENAI_API_KEY ||
         !verifiedShopSender(shop) ||
         shop.status === "disabled")
