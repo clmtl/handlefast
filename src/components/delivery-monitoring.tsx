@@ -126,7 +126,9 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
             className={live ? "bg-emerald-50 text-emerald-800" : undefined}
           >
             {live
-              ? "Envois actifs"
+              ? settings.approvalRequired
+                ? "Validation manuelle"
+                : "Envois actifs"
               : config?.mode === "off"
                 ? "En pause"
                 : config
@@ -182,7 +184,10 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
                       disabled={busy || config.scanning || !available || !config.previewReady}
                       onClick={() => setActivation(true)}
                     >
-                      <Play /> Activer les notifications
+                      <Play />{" "}
+                      {settings.approvalRequired
+                        ? "Activer la surveillance"
+                        : "Activer les notifications"}
                     </Button>
                   )}
                   <Button
@@ -404,7 +409,7 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
                 )
               }
             >
-              Activer les envois
+              {settings.approvalRequired ? "Activer la surveillance" : "Activer les envois"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -419,6 +424,13 @@ function DeliveryRows({ shopId, history }: { shopId: Id<"shops">; history: boole
     { initialNumItems: 10 },
   );
   const cancel = useMutation(api.deliveryMonitoring.cancel);
+  const approve = useMutation(api.deliveryMonitoring.approve);
+  const [approval, setApproval] = useState<{
+    id: Id<"delayNotices">;
+    to: string;
+    text: string;
+  } | null>(null);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   async function takeOver(id: Id<"delayNotices">) {
     setError("");
@@ -483,6 +495,17 @@ function DeliveryRows({ shopId, history }: { shopId: Id<"shops">; history: boole
                   <p className="mt-2 whitespace-pre-wrap break-words text-sm">{row.text}</p>
                 </details>
               )}
+              {row.canApprove && row.email && row.text && (
+                <Button
+                  className="mt-2"
+                  size="sm"
+                  onClick={() => {
+                    if (row.email) setApproval({ id: row.id, to: row.email, text: row.text });
+                  }}
+                >
+                  Relire et envoyer
+                </Button>
+              )}
               {row.canCancel && (
                 <Button
                   type="button"
@@ -498,6 +521,54 @@ function DeliveryRows({ shopId, history }: { shopId: Id<"shops">; history: boole
           ))}
         </ul>
       )}
+      <Dialog
+        open={approval !== null}
+        onOpenChange={(open) => {
+          if (!open && !sending) setApproval(null);
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Confirmer l’avis de retard</DialogTitle>
+            <DialogDescription>{approval ? `Destinataire · ${approval.to}` : ""}</DialogDescription>
+          </DialogHeader>
+          {approval && (
+            <p className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">
+              {approval.text}
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={sending} onClick={() => setApproval(null)}>
+              Annuler
+            </Button>
+            <Button
+              disabled={sending || !approval}
+              onClick={async () => {
+                if (!approval) return;
+                setSending(true);
+                setError("");
+                try {
+                  await approve(approval);
+                  setApproval(null);
+                } catch {
+                  setError(
+                    "La commande ou le message a changé. Vérifie l’aperçu avant de valider.",
+                  );
+                } finally {
+                  setSending(false);
+                }
+              }}
+            >
+              Confirmer et envoyer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {status === "CanLoadMore" && (
         <Button className="mt-3" variant="outline" type="button" onClick={() => loadMore(10)}>
           Afficher plus

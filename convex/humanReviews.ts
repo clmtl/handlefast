@@ -16,6 +16,7 @@ import {
   reviewStatus,
   warningValidator,
 } from "./lib/humanReviewPolicy";
+import { manualReplyTarget } from "./lib/manualReply";
 
 export async function ensureHumanReview(
   ctx: MutationCtx,
@@ -132,6 +133,7 @@ export const get = query({
       review: v.union(humanReviewValidator, v.null()),
       canManage: v.boolean(),
       stale: v.boolean(),
+      sendTarget: v.union(v.null(), v.object({ to: v.string(), from: v.string() })),
       draftLanguageMatches: v.boolean(),
       reason: blockReason,
     }),
@@ -147,7 +149,12 @@ export const get = query({
       .unique();
     if (automatic && activeAutoReply.has(automatic.status)) return null;
     const context = await humanReviewContext(ctx, receipt);
+    const target =
+      membership.role === "owner" && (!automatic || automatic.attempts === 0)
+        ? await manualReplyTarget(ctx, receipt)
+        : null;
     return {
+      sendTarget: target ? { to: target.to, from: target.from } : null,
       review: receipt.humanReview ?? null,
       canManage: membership.role !== "viewer",
       stale: Boolean(

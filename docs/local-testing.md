@@ -31,13 +31,14 @@ pas de serveur Convex de développement. Utiliser son compte HandleFast habituel
 6. **Assistance humaine** : ouvrir une demande nécessitant une intervention,
    consulter le résumé et le brouillon, modifier le brouillon puis changer le
    statut À traiter / En cours / Traité.
-7. **Réponse automatique** : envoyer depuis sa propre boîte une nouvelle demande
-   simple de suivi (importance faible ou normale). Les règles par défaut sont déjà
-   actives si la boutique n’a jamais enregistré de réglage. Vérifier la réponse
-   et son statut dans le lecteur.
+7. **Réponse SAV** : ouvrir une demande, modifier le brouillon, puis choisir
+   **Relire et envoyer**. Vérifier l’adresse HandleFast de la boutique, le
+   destinataire et le texte. Le clic **Confirmer et envoyer** autorise cet envoi.
+   Pendant le test, le propriétaire confirme chaque réponse et chaque avis de retard.
 8. **Retards** : renseigner les délais et le calendrier de la boutique, conserver
    le mode simulation, lancer l’analyse puis consulter les candidats et les motifs
-   de blocage. La simulation n’envoie aucun email.
+   de blocage. La simulation n’envoie aucun email. La surveillance active en
+   mode test affiche les avis éligibles à valider manuellement.
 
 Tous les traitements IA restent sur **GPT-6 Luna**.
 

@@ -40,9 +40,9 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   if (!settings || !shopify) return <Skeleton className="h-48 w-full" />;
-  const { enabled, rules, configured, canManage } = settings;
+  const { enabled, rules, configured, canManage, approvalRequired } = settings;
   const language = supportedEmailLanguage(shopify?.primaryLocale);
-  const active = enabled && configured && Boolean(language);
+  const active = !approvalRequired && enabled && configured && Boolean(language);
   const categoriesWithRules = Object.entries(categories).filter(([category]) =>
     rules.some((rule) => rule.category === category),
   );
@@ -89,7 +89,7 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
                   : "Langue indisponible"}
           </Badge>
         </CardHeader>
-        {canManage && (
+        {canManage && !approvalRequired && (
           <CardContent className="flex flex-wrap gap-2">
             <Button
               type="button"
@@ -263,7 +263,7 @@ export function AutomaticReplyPanel({ receiptId }: { receiptId: Id<"emailReceipt
       className="mt-4 rounded-lg border border-blue-600 bg-blue-50/30 p-4"
       aria-label="Réponse automatique"
     >
-      <h3 className="font-semibold">Réponse automatique</h3>
+      <h3 className="font-semibold">{reply.manual ? "Réponse validée" : "Réponse automatique"}</h3>
       <p role="status" className="mt-2 text-sm">
         {autoReplyStatuses[reply.status]}
         {reply.sentAt ? ` · ${new Date(reply.sentAt).toLocaleString("fr-FR")}` : ""}

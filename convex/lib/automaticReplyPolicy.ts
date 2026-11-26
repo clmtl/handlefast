@@ -90,6 +90,7 @@ export const automaticReplyFields = {
   expiresAt: v.number(),
   nextAttemptAt: v.number(),
   attempts: v.number(),
+  approvedBy: v.optional(v.id("profiles")),
   acceptanceUncertain: v.optional(v.boolean()),
   token: v.optional(v.string()),
   contextKey: v.optional(v.string()),

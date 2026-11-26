@@ -375,6 +375,39 @@ test("delay notifications wait for a supported shop language", async () => {
   ).rejects.toThrow("ShopLanguageUnavailable");
 });
 
+test("test mode stops both queued and newly detected delay notices until owner approval", async () => {
+  const f = await fixture(true);
+  await scan(f, false);
+  const queued = await notice(f);
+  vi.stubEnv("REQUIRE_EMAIL_APPROVAL", "true");
+  expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
+  expect(await notice(f)).toMatchObject({
+    status: "cancelled",
+    reason: "approval_required",
+    attempts: 0,
+  });
+  await scan(f, false);
+  expect(await notice(f)).toMatchObject({ status: "cancelled", attempts: 0 });
+  const list = await f.shop.client.query(api.deliveryMonitoring.list, {
+    shopId: f.shop.shopId,
+    history: false,
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  const preview = list.page[0];
+  expect(preview.canApprove).toBe(true);
+  const args = { id: queued._id, to: preview.email ?? "", text: preview.text };
+  await expect(
+    f.shop.client.mutation(api.deliveryMonitoring.approve, { ...args, text: "Old" }),
+  ).rejects.toThrow("NotificationChanged");
+  await f.shop.client.mutation(api.deliveryMonitoring.approve, args);
+  expect(
+    await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id }),
+  ).toMatchObject({
+    payload: { to: [args.to], text: args.text },
+  });
+  expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
+});
+
 test("manual simulation leaves a due live scan available without sending", async () => {
   const f = await fixture(true);
   const p = await policy(f);

@@ -1,7 +1,7 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { env, internalMutation, type MutationCtx, mutation, query } from "./_generated/server";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { emailPayload } from "./lib/automaticReplyPolicy";
@@ -19,6 +19,7 @@ import {
   storedDeliveryConfig,
   validDeliveryConfig,
 } from "./lib/deliveryPolicy";
+import { replyAlias } from "./lib/inboundEmailRoutes";
 import { shopLocale, supportedEmailLanguage } from "./lib/shopLanguage";
 
 async function startScan(
@@ -61,6 +62,7 @@ export const get = query({
     ),
     canManage: v.boolean(),
     configured: v.boolean(),
+    approvalRequired: v.boolean(),
   }),
   handler: async (ctx, { shopId }) => {
     const { membership } = await requireShopMembership(ctx, shopId);
@@ -90,6 +92,7 @@ export const get = query({
           }
         : null,
       canManage: ["owner", "admin"].includes(membership.role),
+      approvalRequired: env.REQUIRE_EMAIL_APPROVAL === "true",
       configured: Boolean(env.RESEND_API_KEY),
     };
   },
@@ -204,6 +207,7 @@ export const list = query({
         sentAt: v.union(v.number(), v.null()),
         text: v.string(),
         canCancel: v.boolean(),
+        canApprove: v.boolean(),
       }),
     ),
     isDone: v.boolean(),
@@ -212,6 +216,10 @@ export const list = query({
   handler: async (ctx, { shopId, history, paginationOpts }) => {
     const { membership } = await requireShopMembership(ctx, shopId);
     const language = supportedEmailLanguage(await shopLocale(ctx, shopId));
+    const policy = await ctx.db
+      .query("deliveryPolicies")
+      .withIndex("by_shopId", (q) => q.eq("shopId", shopId))
+      .unique();
     const result = await (history
       ? ctx.db
           .query("delayNotices")
@@ -243,8 +251,19 @@ export const list = query({
         updatedAt: row.updatedAt,
         sentAt: row.sentAt ?? null,
         text:
-          row.payload?.text ??
+          (row.status !== "cancelled" || row.attempts > 0 ? row.payload?.text : undefined) ??
           (language ? delayEmail(language, row.orderName, shop?.name ?? "").text : ""),
+        canApprove:
+          env.REQUIRE_EMAIL_APPROVAL === "true" &&
+          membership.role === "owner" &&
+          policy?.mode === "live" &&
+          !row.estimated &&
+          row.placedAt >= (policy.liveFrom ?? Infinity) &&
+          ["none", "cancelled"].includes(row.status) &&
+          row.attempts === 0 &&
+          !row.cancelledBy &&
+          ["eligible", "approval_required"].includes(row.reason) &&
+          Boolean(language),
         canCancel: membership.role !== "viewer" && ["queued", "retrying"].includes(row.status),
       });
     }
@@ -304,6 +323,7 @@ export const scanPage = internalMutation({
       });
       if (
         !simulation &&
+        env.REQUIRE_EMAIL_APPROVAL !== "true" &&
         reason === "eligible" &&
         !row.cancelledBy &&
         row.attempts === 0 &&
@@ -313,50 +333,16 @@ export const scanPage = internalMutation({
         info.language &&
         order.email
       ) {
-        const replyToken = row.replyToken ?? crypto.randomUUID(),
-          mail = delayEmail(info.language, order.name, info.shop.name);
-        const conversationId =
-          row.conversationId && (await ctx.db.get(row.conversationId))
-            ? row.conversationId
-            : await ctx.db.insert("supportConversations", {
-                organizationId: info.shop.organizationId,
-                shopId: row.shopId,
-                routeId: info.route._id,
-                customerEmail: order.email,
-                orderGid: order.gid,
-                subject: mail.subject,
-                status: "pending",
-                lastMessageAt: Date.now(),
-                autoReplyReservedAt: Date.now(),
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-              });
-        const payload = {
-          from: `HandleFast <${info.route.address}>`,
-          to: [order.email],
-          reply_to: `hf_delay_${replyToken}@${info.route.domain}`,
-          subject: mail.subject,
-          text: mail.text,
-          headers: {
-            "Auto-Submitted": "auto-generated",
-            "X-Auto-Response-Suppress": "All",
-            "X-HandleFast-Auto-Reply": "1",
-          },
-        };
-        await ctx.db.patch(row._id, {
-          status: "queued",
-          revision: policy.revision,
-          replyToken,
-          routeId: info.route._id,
-          conversationId,
-          payload,
-          contextKey: info.contextKey,
-          sendDeadline: Math.min(row.expiresAt, Date.now() + NOTICE_WINDOW),
-          nextAttemptAt: Date.now(),
-        });
-        await ctx.scheduler.runAfter(0, internal.deliveryNotificationProcessing.send, {
-          id: row._id,
-        });
+        await queueNotice(
+          ctx,
+          row,
+          policy,
+          order,
+          info.route,
+          info.shop,
+          info.language,
+          info.contextKey,
+        );
       }
     }
     if (!result.isDone) {
@@ -415,6 +401,114 @@ export const cancel = mutation({
     return null;
   },
 });
+async function queueNotice(
+  ctx: MutationCtx,
+  row: Doc<"delayNotices">,
+  policy: Doc<"deliveryPolicies">,
+  order: Doc<"shopifyOrders">,
+  route: Doc<"inboundEmailRoutes">,
+  shop: Doc<"shops">,
+  language: NonNullable<ReturnType<typeof supportedEmailLanguage>>,
+  contextKey: string,
+  approvedBy?: Id<"profiles">,
+) {
+  const email = order.email;
+  if (!email) throw new ConvexError("NotificationUnavailable");
+  const replyToken = row.replyToken ?? crypto.randomUUID(),
+    mail = delayEmail(language, order.name, shop.name);
+  const conversationId =
+    row.conversationId && (await ctx.db.get(row.conversationId))
+      ? row.conversationId
+      : await ctx.db.insert("supportConversations", {
+          organizationId: shop.organizationId,
+          shopId: row.shopId,
+          routeId: route._id,
+          customerEmail: email,
+          orderGid: order.gid,
+          subject: mail.subject,
+          status: "pending",
+          lastMessageAt: Date.now(),
+          autoReplyReservedAt: Date.now(),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+  const payload = {
+    from: `HandleFast <${route.address}>`,
+    to: [email],
+    reply_to: replyAlias(route, "delay", replyToken),
+    subject: mail.subject,
+    text: mail.text,
+    headers: {
+      "Auto-Submitted": "auto-generated",
+      "X-Auto-Response-Suppress": "All",
+      "X-HandleFast-Auto-Reply": "1",
+    },
+  };
+  await ctx.db.patch(row._id, {
+    status: "queued",
+    approvedBy,
+    revision: policy.revision,
+    replyToken,
+    routeId: route._id,
+    conversationId,
+    payload,
+    contextKey,
+    sendDeadline: Math.min(row.expiresAt, Date.now() + NOTICE_WINDOW),
+    nextAttemptAt: Date.now(),
+  });
+  await ctx.scheduler.runAfter(0, internal.deliveryNotificationProcessing.send, {
+    id: row._id,
+  });
+}
+
+export const approve = mutation({
+  args: { id: v.id("delayNotices"), to: v.string(), text: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { id, to, text }) => {
+    const row = await ctx.db.get(id);
+    if (!row) throw new ConvexError("NotificationUnavailable");
+    const { membership, profile } = await requireShopMembership(ctx, row.shopId);
+    if (membership.role !== "owner") throw new ConvexError("Forbidden");
+    const policy = await ctx.db
+      .query("deliveryPolicies")
+      .withIndex("by_shopId", (q) => q.eq("shopId", row.shopId))
+      .unique();
+    if (
+      policy?.mode !== "live" ||
+      row.estimated ||
+      row.placedAt < (policy.liveFrom ?? Infinity) ||
+      row.attempts > 0 ||
+      (row.status !== "none" && row.status !== "cancelled") ||
+      row.cancelledBy ||
+      !env.RESEND_API_KEY
+    )
+      throw new ConvexError("NotificationUnavailable");
+    const info = await inspectDelivery(ctx, row);
+    if (
+      info.reason !== "eligible" ||
+      !info.order ||
+      !info.route ||
+      !info.shop ||
+      !info.language ||
+      info.order.email !== to ||
+      delayEmail(info.language, info.order.name, info.shop.name).text !== text
+    )
+      throw new ConvexError("NotificationChanged");
+    await queueNotice(
+      ctx,
+      row,
+      policy,
+      info.order,
+      info.route,
+      info.shop,
+      info.language,
+      info.contextKey,
+      profile._id,
+    );
+    return null;
+  },
+});
+
 export const claimSend = internalMutation({
   args: { id: v.id("delayNotices") },
   returns: v.union(v.null(), v.object({ token: v.string(), payload: emailPayload })),
@@ -427,6 +521,10 @@ export const claimSend = internalMutation({
       !row.payload
     )
       return null;
+    if (env.REQUIRE_EMAIL_APPROVAL === "true" && !row.approvedBy) {
+      await stop(ctx, row, "approval_required");
+      return null;
+    }
     const policy = await ctx.db
       .query("deliveryPolicies")
       .withIndex("by_shopId", (q) => q.eq("shopId", row.shopId))

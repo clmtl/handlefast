@@ -386,6 +386,49 @@ test.each([null, "it"])("hands off when the shop language %s has no template", a
   expect((await receipt(f))?.humanReview).toMatchObject({ status: "open" });
 });
 
+test("owner approval is required even for queued automatic replies in test mode", async () => {
+  const f = await fixture();
+  const queued = await ready(f);
+  vi.stubEnv("REQUIRE_EMAIL_APPROVAL", "true");
+  expect(await f.t.mutation(internal.automaticReplies.claimSend, { id: queued._id })).toBeNull();
+  expect(await row(f)).toMatchObject({
+    status: "cancelled",
+    attempts: 0,
+    reason: "approval_required",
+  });
+  const review = await f.shop.client.query(api.humanReviews.get, { receiptId: f.receiptId });
+  const target = review?.sendTarget;
+  if (!target) throw new Error("Missing approved sending account");
+  const args = { receiptId: f.receiptId, ...target, text: "Message approuvé" };
+  await expect(
+    f.shop.client.mutation(api.automaticReplies.approveManual, {
+      ...args,
+      to: "another@example.com",
+    }),
+  ).rejects.toThrow("ManualReplyUnavailable");
+  await f.shop.client.mutation(api.automaticReplies.approveManual, args);
+  await expect(f.shop.client.mutation(api.automaticReplies.approveManual, args)).rejects.toThrow(
+    "ReplyAlreadyQueued",
+  );
+  const claim = await f.t.mutation(internal.automaticReplies.claimSend, { id: queued._id });
+  expect(claim?.payload).toMatchObject({ from: target.from, to: [target.to], text: args.text });
+  expect(await f.t.mutation(internal.automaticReplies.claimSend, { id: queued._id })).toBeNull();
+});
+
+test("adding a shop provisions a separate support identity in the same workspace", async () => {
+  const f = await fixture();
+  const shopId = await f.shop.client.mutation(api.shops.add, {
+    organizationId: f.shop.organizationId,
+    name: "Deuxième boutique",
+  });
+  const route = await f.shop.client.query(api.inboundEmailRoutes.getForShop, { shopId });
+  expect(route?.address).toBeTruthy();
+  expect(route?.address).not.toBe(f.route.address);
+  expect((await f.shop.client.query(api.viewer.me)).shops.map((shop) => shop._id)).toContain(
+    shopId,
+  );
+});
+
 test("freezes recipient, thread headers, subject and response; dispatch is claimed only once", async () => {
   const f = await fixture(),
     r = await ready(f);

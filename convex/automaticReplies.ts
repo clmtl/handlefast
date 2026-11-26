@@ -21,10 +21,13 @@ import {
 } from "./lib/automaticReplyPolicy";
 import { orderReferences } from "./lib/commerceModel";
 import { humanReviewContext } from "./lib/humanReviewContext";
+import { replyAlias } from "./lib/inboundEmailRoutes";
+import { manualReplyTarget } from "./lib/manualReply";
 import { supportedEmailLanguage } from "./lib/shopLanguage";
 import { cachedOrderContext } from "./orderContext";
 
 async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision: number) {
+  if (env.REQUIRE_EMAIL_APPROVAL === "true") return { blocked: "approval_required" } as const;
   if (
     receipt.proactiveNoticeId ||
     receipt.status !== "processed" ||
@@ -228,12 +231,81 @@ export const cancel = mutation({
   },
 });
 
+export const approveManual = mutation({
+  args: { receiptId: v.id("emailReceipts"), text: v.string(), to: v.string(), from: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { receiptId, text, to, from }) => {
+    const receipt = await ctx.db.get(receiptId);
+    if (!receipt) throw new ConvexError("EmailUnavailable");
+    const { membership, profile } = await requireShopMembership(ctx, receipt.shopId);
+    if (membership.role !== "owner") throw new ConvexError("Forbidden");
+    const target = await manualReplyTarget(ctx, receipt);
+    const body = text.trim();
+    if (
+      !target ||
+      !env.RESEND_API_KEY ||
+      !body ||
+      body.length > 6000 ||
+      target.to !== to ||
+      target.from !== from
+    )
+      throw new ConvexError("ManualReplyUnavailable");
+    const existing = await ctx.db
+      .query("automaticReplies")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
+      .unique();
+    if (existing && (existing.attempts > 0 || existing.status !== "cancelled"))
+      throw new ConvexError("ReplyAlreadyQueued");
+    const replyToken = crypto.randomUUID();
+    const messageId = target.message.messageId;
+    const headers: Record<string, string> = validMessageId(messageId)
+      ? {
+          "In-Reply-To": messageId,
+          References: [...target.message.references, messageId]
+            .filter(validMessageId)
+            .slice(-20)
+            .join(" "),
+        }
+      : {};
+    const now = Date.now();
+    const values = {
+      receiptId,
+      shopId: receipt.shopId,
+      conversationId: target.conversationId,
+      approvedBy: profile._id,
+      status: "ready" as const,
+      revision: 0,
+      createdAt: now,
+      expiresAt: Math.min(receipt.expiresAt, now + AUTO_REPLY_WINDOW),
+      nextAttemptAt: now,
+      attempts: 0,
+      replyToken,
+      payload: {
+        from,
+        to: [to],
+        reply_to: replyAlias(target.route, "reply", replyToken),
+        subject: `Re: ${(target.message.subject ?? "")
+          .replace(/[\r\n]/g, " ")
+          .replace(/^re:\s*/i, "")
+          .slice(0, 450)}`,
+        text: body,
+        headers,
+      },
+    };
+    if (existing) await ctx.db.replace(existing._id, values);
+    const id = existing?._id ?? (await ctx.db.insert("automaticReplies", values));
+    await ctx.scheduler.runAfter(0, internal.automaticReplyProcessing.send, { id });
+    return null;
+  },
+});
+
 export const forEmail = query({
   args: { receiptId: v.id("emailReceipts") },
   returns: v.union(
     v.null(),
     v.object({
       status: autoReplyStatus,
+      manual: v.boolean(),
       text: v.union(v.string(), v.null()),
       to: v.union(v.string(), v.null()),
       sentAt: v.union(v.number(), v.null()),
@@ -252,6 +324,7 @@ export const forEmail = query({
     if (!row) return null;
     return {
       status: row.status,
+      manual: Boolean(row.approvedBy),
       text: row.payload?.text ?? null,
       to: row.payload?.to[0] ?? null,
       sentAt: row.sentAt ?? null,
@@ -357,7 +430,7 @@ export const prepared = internalMutation({
       await stop(ctx, row, "invalid_reply_address");
       return null;
     }
-    const replyAddress = `hf_reply_${row.replyToken}@${info.route.domain}`;
+    const replyAddress = replyAlias(info.route, "reply", row.replyToken);
     const payload = {
       from: `HandleFast <${info.route.address}>`,
       to: [info.message.from.address],
@@ -419,15 +492,28 @@ export const claimSend = internalMutation({
       return null;
     const receipt = await ctx.db.get(row.receiptId);
     if (!receipt) return null;
-    const info = await inspect(ctx, receipt, row.revision);
-    if (
-      info.blocked !== null ||
-      info.context.contextKey !== row.contextKey ||
-      row.expiresAt <= Date.now() ||
-      row.attempts >= 3
-    ) {
-      await stop(ctx, row, info.blocked ?? "context_or_deadline_changed");
+    if (row.expiresAt <= Date.now() || row.attempts >= 3) {
+      await stop(ctx, row, "context_or_deadline_changed");
       return null;
+    }
+    if (row.approvedBy) {
+      const target = await manualReplyTarget(ctx, receipt);
+      if (
+        !env.RESEND_API_KEY ||
+        !target ||
+        target.from !== row.payload.from ||
+        target.to !== row.payload.to[0] ||
+        target.conversationId !== row.conversationId
+      ) {
+        await stop(ctx, row, "context_or_deadline_changed");
+        return null;
+      }
+    } else {
+      const info = await inspect(ctx, receipt, row.revision);
+      if (info.blocked !== null || info.context.contextKey !== row.contextKey) {
+        await stop(ctx, row, info.blocked ?? "context_or_deadline_changed");
+        return null;
+      }
     }
     const token = crypto.randomUUID();
     await ctx.db.patch(id, {

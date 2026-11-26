@@ -3,6 +3,15 @@ import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { blockReasons, reviewStatuses, reviewWarnings } from "../../convex/lib/humanReviewPolicy";
+import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 
 const button =
   "rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
@@ -25,7 +34,7 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
     }
   }
   if (!value) return null;
-  const { review, canManage, stale, draftLanguageMatches } = value,
+  const { review, canManage, stale, draftLanguageMatches, sendTarget } = value,
     proposal = review?.proposal;
   return (
     <section
@@ -96,6 +105,7 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
           saved={review.editedDraft ?? (draftLanguageMatches ? (proposal?.draftReply ?? "") : "")}
           suggested={draftLanguageMatches ? (proposal?.draftReply ?? "") : ""}
           canManage={canManage}
+          sendTarget={sendTarget}
           edited={review.editedDraft !== undefined}
         />
       )}
@@ -150,15 +160,20 @@ function DraftEditor({
   saved,
   suggested,
   canManage,
+  sendTarget,
   edited,
 }: {
   receiptId: Id<"emailReceipts">;
   saved: string;
   suggested: string;
   canManage: boolean;
+  sendTarget: { from: string; to: string } | null;
   edited: boolean;
 }) {
   const saveDraft = useMutation(api.humanReviews.saveDraft);
+  const approve = useMutation(api.automaticReplies.approveManual);
+  const [approval, setApproval] = useState<{ from: string; to: string; text: string } | null>(null);
+  const [sendError, setSendError] = useState("");
   const [text, setText] = useState(""),
     [editing, setEditing] = useState(false),
     [busy, setBusy] = useState(false),
@@ -206,8 +221,76 @@ function DraftEditor({
         {edited ? "Brouillon modifié par l’équipe. " : "Proposition à relire et adapter. "}Validez
         les faits et les engagements avant tout envoi depuis votre messagerie.
       </p>
+      <Dialog
+        open={approval !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setApproval(null);
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Confirmer l’envoi</DialogTitle>
+            <DialogDescription>
+              L’email partira depuis l’adresse HandleFast de cette boutique.
+            </DialogDescription>
+          </DialogHeader>
+          {approval && (
+            <>
+              <p className="break-all text-sm">
+                De {approval.from}
+                <br />À {approval.to}
+              </p>
+              <p className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">
+                {approval.text}
+              </p>
+            </>
+          )}
+          {sendError && (
+            <p className="text-sm text-destructive" role="alert">
+              {sendError}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setApproval(null)}>
+              Annuler
+            </Button>
+            <Button
+              disabled={busy || !approval}
+              onClick={async () => {
+                if (!approval) return;
+                setBusy(true);
+                setSendError("");
+                try {
+                  await approve({ receiptId, ...approval });
+                  setApproval(null);
+                  setFeedback("Envoi validé.");
+                } catch {
+                  setSendError(
+                    "L’envoi est indisponible ou a déjà été validé. Vérifie son statut.",
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Confirmer et envoyer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {canManage && (
         <div className="mt-3 flex flex-wrap gap-2">
+          {sendTarget && (
+            <Button
+              disabled={busy || !draft.trim()}
+              onClick={() => {
+                setSendError("");
+                setApproval({ ...sendTarget, text: draft.trim() });
+              }}
+            >
+              Relire et envoyer
+            </Button>
+          )}
           <button
             className={button}
             type="button"

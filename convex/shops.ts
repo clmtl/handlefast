@@ -5,8 +5,8 @@ import {
   requireMembership,
   requireShopMembership,
 } from "./lib/authorization";
-
 import { effectiveReplyPolicy } from "./lib/automaticReplyPolicy";
+import { createShop } from "./onboarding";
 
 export const listForOrganization = query({
   args: {
@@ -104,3 +104,20 @@ function normalizeOptionalEmail(value: string) {
   const trimmed = value.trim();
   return trimmed || undefined;
 }
+
+export const add = mutation({
+  args: { organizationId: v.id("organizations"), name: v.string() },
+  returns: v.id("shops"),
+  handler: async (ctx, { organizationId, name }) => {
+    const { membership } = await requireMembership(ctx, organizationId);
+    assertCanManageOrganization(membership);
+    const cleaned = name.trim();
+    if (!cleaned || cleaned.length > 100) throw new ConvexError("InvalidShopName");
+    const shops = await ctx.db
+      .query("shops")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+      .take(20);
+    if (shops.length >= 20) throw new ConvexError("ShopLimitReached");
+    return (await createShop(ctx, organizationId, cleaned)).shopId;
+  },
+});

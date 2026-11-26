@@ -10,6 +10,7 @@ export const get = query({
     rules: v.array(replyRule),
     canManage: v.boolean(),
     configured: v.boolean(),
+    approvalRequired: v.boolean(),
   }),
   handler: async (ctx, { shopId }) => {
     const { membership } = await requireShopMembership(ctx, shopId);
@@ -22,6 +23,7 @@ export const get = query({
       enabled: policy.enabled,
       rules: policy.rules,
       canManage: ["owner", "admin"].includes(membership.role),
+      approvalRequired: env.REQUIRE_EMAIL_APPROVAL === "true",
       configured: Boolean(env.RESEND_API_KEY && env.OPENAI_API_KEY),
     };
   },

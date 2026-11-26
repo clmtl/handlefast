@@ -1,5 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { env, type MutationCtx, type QueryCtx } from "../_generated/server";
 import { cachedOrderContext } from "../orderContext";
 import { effectiveReplyPolicy, matchesRule } from "./automaticReplyPolicy";
 import { type ReviewWarning, replyBlockReason } from "./humanReviewPolicy";
@@ -83,7 +83,9 @@ export async function humanReviewContext(
     automatic && ["failed", "uncertain", "cancelled"].includes(automatic.status)
       ? ("automatic_unavailable" as const)
       : replyBlockReason(
-          policy.enabled && (!policy.preset || Boolean(receipt.autoReplyEligibility?.eligible)),
+          env.REQUIRE_EMAIL_APPROVAL !== "true" &&
+            policy.enabled &&
+            (!policy.preset || Boolean(receipt.autoReplyEligibility?.eligible)),
           receipt.classification,
           matchesRule(policy.rules, receipt.classification),
         );

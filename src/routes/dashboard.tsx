@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
   ArrowUpRight,
   Bot,
@@ -11,6 +11,7 @@ import {
   ListChecks,
   LogOut,
   Mail,
+  Plus,
   ShoppingBag,
   Store,
   Truck,
@@ -29,11 +30,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import {
   Sidebar,
@@ -186,14 +196,22 @@ function Dashboard() {
           </div>
         </header>
         <div className="mx-auto w-full max-w-[1460px] px-4 py-7 sm:px-7 lg:px-9 lg:py-9">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-[2rem]">
-              {sections[section].label}
-            </h1>
-            {section === "overview" && (
-              <p className="mt-1 text-sm text-muted-foreground">
-                {shop?.name ?? viewer.organizations[0]?.name}
-              </p>
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-[2rem]">
+                {sections[section].label}
+              </h1>
+              {section === "overview" && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {shop?.name ?? viewer.organizations[0]?.name}
+                </p>
+              )}
+            </div>
+            {section === "shopify" && shop && (role === "owner" || role === "admin") && (
+              <AddShop
+                organizationId={shop.organizationId}
+                onAdded={(shopId) => void navigate({ search: { view: "shopify", shop: shopId } })}
+              />
             )}
           </div>
           {shop ? (
@@ -212,6 +230,81 @@ function Dashboard() {
         </div>
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+function AddShop({
+  organizationId,
+  onAdded,
+}: {
+  organizationId: Id<"organizations">;
+  onAdded: (id: Id<"shops">) => void;
+}) {
+  const add = useMutation(api.shops.add);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <Plus /> Ajouter une boutique
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!busy) setOpen(value);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ajouter une boutique</DialogTitle>
+            <DialogDescription>
+              Donne-lui un nom, puis lance la connexion Shopify.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setBusy(true);
+              setError("");
+              try {
+                const id = await add({ organizationId, name });
+                setName("");
+                setOpen(false);
+                onAdded(id);
+              } catch {
+                setError("Impossible d’ajouter la boutique.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label className="block text-sm" htmlFor="new-shop-name">
+              Nom de la boutique
+            </label>
+            <Input
+              id="new-shop-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={100}
+            />
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <DialogFooter>
+              <Button type="submit" disabled={busy || !name.trim()}>
+                Créer la boutique
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -368,11 +461,13 @@ function Overview({ shopId, shop }: { shopId: Id<"shops">; shop?: string }) {
       view: "replies" as const,
       label: "Réponses automatiques",
       status: reply
-        ? reply.enabled && reply.configured && supportedEmailLanguage(commerce?.primaryLocale)
-          ? "Actives"
-          : reply.enabled
-            ? "À configurer"
-            : "En pause"
+        ? reply.approvalRequired
+          ? "Validation manuelle"
+          : reply.enabled && reply.configured && supportedEmailLanguage(commerce?.primaryLocale)
+            ? "Actives"
+            : reply.enabled
+              ? "À configurer"
+              : "En pause"
         : "…",
     },
     {
@@ -380,7 +475,9 @@ function Overview({ shopId, shop }: { shopId: Id<"shops">; shop?: string }) {
       label: "Retards de livraison",
       status: delivery
         ? delivery.config?.mode === "live"
-          ? "Actifs"
+          ? delivery.approvalRequired
+            ? "Validation manuelle"
+            : "Actifs"
           : delivery.config?.mode === "simulation"
             ? "Simulation"
             : delivery.config?.mode === "off"

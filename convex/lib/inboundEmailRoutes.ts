@@ -41,7 +41,8 @@ export async function ensureInboundEmailRouteForShop(
   }
 
   const domain = getInboundEmailDomain();
-  const baseLocalPart = normalizeEmailLocalPart(`hf_${shop._id}`) || "hf_shop";
+  const prefix = env.EMAIL_ROUTE_NAMESPACE === "prod" ? "hf_prod" : "hf";
+  const baseLocalPart = normalizeEmailLocalPart(`${prefix}_${shop._id}`) || "hf_shop";
 
   for (let index = 0; index < 20; index += 1) {
     const suffix = index === 0 ? "" : `_${index + 1}`;
@@ -90,9 +91,18 @@ function normalizeEmailLocalPart(value: string) {
     .slice(0, maxEmailLocalPartLength);
 }
 
+export function replyAlias(
+  route: Doc<"inboundEmailRoutes">,
+  type: "reply" | "delay",
+  token: string,
+) {
+  const prefix = route.localPart.startsWith("hf_prod_") ? "hf_prod" : "hf";
+  return `${prefix}_${type}_${token}@${route.domain}`;
+}
+
 // Per-response Reply-To aliases preserve threads even when a sending provider rewrites Message-ID.
 export async function automaticReplyRoute(ctx: MutationCtx | QueryCtx, address: string) {
-  const match = /^hf_reply_([a-z0-9-]{36})@([^@]+)$/i.exec(address);
+  const match = /^hf_(?:prod_)?reply_([a-z0-9-]{36})@([^@]+)$/i.exec(address);
   if (!match) return null;
   const reply = await ctx.db
     .query("automaticReplies")
@@ -117,7 +127,7 @@ export async function resolveInboundEmailRoute(ctx: MutationCtx | QueryCtx, addr
   );
 }
 export async function delayReplyRoute(ctx: MutationCtx | QueryCtx, address: string) {
-  const match = /^hf_delay_([a-z0-9-]{36})@([^@]+)$/i.exec(address);
+  const match = /^hf_(?:prod_)?delay_([a-z0-9-]{36})@([^@]+)$/i.exec(address);
   if (!match) return null;
   const notice = await ctx.db
     .query("delayNotices")
