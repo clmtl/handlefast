@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import { action, internalQuery, mutation, query } from "./_generated/server";
+import { action, env, internalQuery, mutation, query } from "./_generated/server";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { receiptDoc, receiptStatus } from "./lib/emailReceiptValidators";
 import { verifiedShopSender } from "./lib/shopSender";
@@ -23,6 +23,7 @@ export const connection = query({
     verified: v.boolean(),
     lastReceivedAt: v.union(v.number(), v.null()),
     canManage: v.boolean(),
+    gmailClientId: v.optional(v.string()),
     testSubject: v.union(v.string(), v.null()),
     testExpiresAt: v.union(v.number(), v.null()),
   }),
@@ -54,6 +55,10 @@ export const connection = query({
       ),
       lastReceivedAt: route?.lastReceivedAt ?? null,
       canManage: membership.role === "owner" || membership.role === "admin",
+      gmailClientId:
+        membership.role === "owner" || membership.role === "admin"
+          ? env.GMAIL_OAUTH_CLIENT_ID
+          : undefined,
       testSubject: test ? `HandleFast test ${test._id}` : null,
       testExpiresAt: test?.expiresAt ?? null,
     };

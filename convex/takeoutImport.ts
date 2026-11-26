@@ -29,6 +29,7 @@ export const commit = internalMutation({
     rawStorageId: v.id("_storage"),
     sha256: v.string(),
     rawSize: v.number(),
+    source: v.optional(v.union(v.literal("takeout"), v.literal("gmail"))),
     date: v.number(),
     direction,
     from: identity,
@@ -57,6 +58,7 @@ export const commit = internalMutation({
     if (!route) throw new ConvexError("ReceptionDisabled");
 
     const now = Date.now();
+    const source = args.source ?? "takeout";
     const receivedAt = Math.min(args.date, now);
     const expiresAt = emailExpiresAt(receivedAt);
     const incoming = args.direction === "inbound";
@@ -136,12 +138,12 @@ export const commit = internalMutation({
       attempts: 0,
       nextAttemptAt: now,
       updatedAt: now,
-      source: "takeout",
+      source,
       autoReplyEligibility: { eligible: false, revision: 0 },
       automaticReplySuppressed: automatic,
       triage: {
         bucket: incoming && !automatic ? "sav" : "other",
-        reason: "takeout",
+        reason: source,
         source: "rules",
         version: 1,
       },
@@ -161,7 +163,7 @@ export const commit = internalMutation({
       shopId: shop._id,
       routeId: route._id,
       receiptId,
-      provider: "google_takeout",
+      provider: source === "gmail" ? "gmail_api" : "google_takeout",
       deliveryKey: key,
       envelopeFrom: args.from.address,
       envelopeTo: route.address,
@@ -206,7 +208,7 @@ export const commit = internalMutation({
       if (previous?.receiptId) {
         const prior = await ctx.db.get(previous.receiptId);
         if (
-          prior?.source === "takeout" &&
+          prior?.source !== undefined &&
           prior.humanReview?.status === "open" &&
           !prior.humanReview.updatedBy
         )

@@ -30,7 +30,7 @@ import { cachedOrderContext } from "./orderContext";
 async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision: number) {
   if (env.REQUIRE_EMAIL_APPROVAL === "true") return { blocked: "approval_required" } as const;
   if (
-    receipt.source === "takeout" ||
+    receipt.source !== undefined ||
     receipt.proactiveNoticeId ||
     receipt.status !== "processed" ||
     receipt.triage?.bucket !== "sav" ||
