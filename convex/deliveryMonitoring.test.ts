@@ -90,6 +90,8 @@ async function workspace(t: ReturnType<typeof createBackend>, seed: string) {
 async function fixture(live = false) {
   const t = createBackend(),
     shop = await workspace(t, "delivery");
+  await t.run((ctx) => ctx.db.patch(shop.shopId, { supportEmail: "sav@fixture.example" }));
+  vi.stubEnv("VERIFIED_SHOP_SENDERS", JSON.stringify({ [shop.shopId]: "sav@fixture.example" }));
   const route = await shop.client.query(api.inboundEmailRoutes.getForShop, { shopId: shop.shopId });
   if (!route) throw new Error("Missing route");
   const connectionId = await t.run((ctx) =>
@@ -403,7 +405,7 @@ test("test mode stops both queued and newly detected delay notices until owner a
   expect(
     await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id }),
   ).toMatchObject({
-    payload: { to: [args.to], text: args.text },
+    payload: { from: "sav@fixture.example", to: [args.to], text: args.text },
   });
   expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
 });

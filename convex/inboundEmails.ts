@@ -276,6 +276,20 @@ export const ingestFromWorker = internalMutation({
       lastReceivedAt: Math.max(route.lastReceivedAt ?? 0, receivedAt),
       updatedAt: now,
     });
+    const supportEmail = shop.supportEmail;
+    // This confirms receipt on the route, never permission to send as the mailbox.
+    if (
+      supportEmail &&
+      supportEmail !== route.address &&
+      route.verifiedSupportEmail !== supportEmail &&
+      envelopeTo === route.address &&
+      decision?.bucket !== "setup" &&
+      normalizedFrom.address !== "forwarding-noreply@google.com" &&
+      !suppressAutoResponse(args.headers) &&
+      args.to.some((to) => normalizeEmailAddress(to.address) === supportEmail)
+    ) {
+      await ctx.db.patch(route._id, { verifiedAt: now, verifiedSupportEmail: supportEmail });
+    }
     const connectionTest = await ctx.db
       .query("emailConnectionTests")
       .withIndex("by_routeId", (q) => q.eq("routeId", route._id))
@@ -284,6 +298,7 @@ export const ingestFromWorker = internalMutation({
     if (
       connectionTest &&
       !connectionTest.verifiedAt &&
+      connectionTest.supportEmail === supportEmail &&
       connectionTest.expiresAt > now &&
       subject?.includes(String(connectionTest._id)) &&
       args.to.some((to) => normalizeEmailAddress(to.address) === connectionTest.supportEmail)

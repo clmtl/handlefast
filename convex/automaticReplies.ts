@@ -24,6 +24,7 @@ import { humanReviewContext } from "./lib/humanReviewContext";
 import { replyAlias } from "./lib/inboundEmailRoutes";
 import { manualReplyTarget } from "./lib/manualReply";
 import { supportedEmailLanguage } from "./lib/shopLanguage";
+import { verifiedShopSender } from "./lib/shopSender";
 import { cachedOrderContext } from "./orderContext";
 
 async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision: number) {
@@ -56,7 +57,8 @@ async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision
     route.shopId !== receipt.shopId
   )
     return { blocked: "reception_disabled" } as const;
-  if (!env.RESEND_API_KEY || !env.OPENAI_API_KEY)
+  const from = verifiedShopSender(shop);
+  if (!env.RESEND_API_KEY || !env.OPENAI_API_KEY || !from)
     return { blocked: "provider_unavailable" } as const;
   const classification = receipt.classification;
   if (
@@ -122,7 +124,7 @@ async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision
     )
   )
     return { blocked: "incomplete_context" } as const;
-  return { blocked: null, shop, route, settings, message, classification, context, language };
+  return { blocked: null, from, shop, route, settings, message, classification, context, language };
 }
 
 export async function routeSupportReply(
@@ -432,7 +434,7 @@ export const prepared = internalMutation({
     }
     const replyAddress = replyAlias(info.route, "reply", row.replyToken);
     const payload = {
-      from: `HandleFast <${info.route.address}>`,
+      from: info.from,
       to: [info.message.from.address],
       reply_to: replyAddress,
       subject: `Re: ${(info.message.subject ?? "Votre demande")
@@ -510,7 +512,11 @@ export const claimSend = internalMutation({
       }
     } else {
       const info = await inspect(ctx, receipt, row.revision);
-      if (info.blocked !== null || info.context.contextKey !== row.contextKey) {
+      if (
+        info.blocked !== null ||
+        info.context.contextKey !== row.contextKey ||
+        info.from !== row.payload.from
+      ) {
         await stop(ctx, row, info.blocked ?? "context_or_deadline_changed");
         return null;
       }

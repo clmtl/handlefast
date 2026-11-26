@@ -1,6 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { suppressAutoResponse, validMailbox } from "./automaticReplyPolicy";
+import { verifiedShopSender } from "./shopSender";
 
 export async function manualReplyTarget(
   ctx: QueryCtx | MutationCtx,
@@ -48,9 +49,10 @@ export async function manualReplyTarget(
     .order("desc")
     .first();
   if (latest?._id !== message._id) return null;
-  const sender = shop.name.replace(/[\r\n<>"\\]/g, "").slice(0, 80) || "HandleFast";
+  const from = verifiedShopSender(shop);
+  if (!from) return null;
   return {
-    from: `${sender} <${route.address}>`,
+    from,
     to,
     route,
     message,
