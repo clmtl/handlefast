@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
-import { useState } from "react";
+import { Check, Reply, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Button } from "./ui/button";
@@ -23,6 +24,11 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const editor = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editing) editor.current?.focus();
+  }, [editing]);
 
   async function perform(action: () => Promise<unknown>, failure: string) {
     setBusy(true);
@@ -48,7 +54,7 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
     text ?? review.editedDraft ?? (draftLanguageMatches ? review.proposal?.draftReply : "") ?? "";
 
   return (
-    <section aria-label="Répondre à la conversation">
+    <section aria-label="Actions sur la conversation" className="rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
         {resolved && (
           <span className="mr-auto text-sm font-medium text-muted-foreground">Traitée</span>
@@ -60,7 +66,7 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
               setEditing(true);
             }}
           >
-            {draft ? "Ouvrir le brouillon" : "Répondre"}
+            <Reply aria-hidden="true" /> {draft ? "Ouvrir le brouillon" : "Répondre"}
           </Button>
         )}
         {canManage && !editing && (
@@ -75,6 +81,7 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
               );
             }}
           >
+            {resolved ? <RotateCcw aria-hidden="true" /> : <Check aria-hidden="true" />}
             {resolved ? "Rouvrir" : "Marquer comme traitée"}
           </Button>
         )}
@@ -84,7 +91,8 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
           <label className="block text-sm font-medium">
             Réponse
             <textarea
-              className="mt-2 min-h-36 w-full rounded-md border bg-background p-3 text-sm font-normal"
+              ref={editor}
+              className="mt-2 min-h-36 w-full rounded-lg border bg-background p-3 text-sm leading-6 font-normal focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               value={draft}
               maxLength={6000}
               onChange={(event) => setText(event.target.value)}
@@ -116,7 +124,7 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
               Enregistrer le brouillon
             </Button>
             <Button variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
-              Fermer
+              Fermer le brouillon
             </Button>
           </div>
         </div>

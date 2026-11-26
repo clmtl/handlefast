@@ -10,7 +10,6 @@ import {
   priorities,
 } from "../../convex/lib/emailClassificationPolicy";
 import { ClassificationBadges } from "./email-classification";
-import { EmailReaderDialog } from "./email-reader-dialog";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import {
@@ -26,7 +25,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 const buckets = { sav: "SAV", review: "À vérifier", other: "Hors SAV" } as const;
 type Bucket = keyof typeof buckets;
 
-export function EmailTriageInbox({ shopId }: { shopId: Id<"shops"> }) {
+export function EmailTriageInbox({
+  shopId,
+  openEmail,
+}: {
+  shopId: Id<"shops">;
+  openEmail: (id: Id<"emailReceipts">) => void;
+}) {
   const [bucket, setBucket] = useState<Bucket>("sav");
   const [category, setCategory] = useState<Category | "">("");
   const [priority, setPriority] = useState<Priority | "">("");
@@ -88,6 +93,7 @@ export function EmailTriageInbox({ shopId }: { shopId: Id<"shops"> }) {
             key={`${shopId}:${bucket}:${category}:${priority}`}
             shopId={shopId}
             bucket={bucket}
+            openEmail={openEmail}
             category={bucket === "sav" ? category || undefined : undefined}
             priority={bucket === "sav" ? priority || undefined : undefined}
           />
@@ -102,11 +108,13 @@ function TriageList({
   bucket,
   category,
   priority,
+  openEmail,
 }: {
   shopId: Id<"shops">;
   bucket: Bucket;
   category?: Category;
   priority?: Priority;
+  openEmail: (id: Id<"emailReceipts">) => void;
 }) {
   const [asOf] = useState(Date.now);
   const { results, status, loadMore } = usePaginatedQuery(
@@ -116,7 +124,6 @@ function TriageList({
   );
   const permissions = useQuery(api.emailTriage.permissions, { shopId });
   const reclassify = useMutation(api.emailTriage.reclassify);
-  const [selected, setSelected] = useState<Id<"emailReceipts"> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function move(receiptId: Id<"emailReceipts">, target: Bucket) {
@@ -155,7 +162,7 @@ function TriageList({
           <li key={email.id} className="flex items-center px-3 hover:bg-muted/40 sm:px-5">
             <button
               type="button"
-              onClick={() => setSelected(email.id)}
+              onClick={() => openEmail(email.id)}
               className="flex min-w-0 flex-1 items-center gap-3 py-4 text-left"
             >
               <span className="hidden size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground sm:grid">
@@ -228,7 +235,6 @@ function TriageList({
           </Button>
         </div>
       )}
-      <EmailReaderDialog selected={selected} close={() => setSelected(null)} />
     </>
   );
 }

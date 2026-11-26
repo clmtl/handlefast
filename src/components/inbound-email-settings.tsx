@@ -3,7 +3,6 @@ import { Copy, Mail, Pause, Play } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { EmailReaderDialog } from "./email-reader-dialog";
 import { GmailHistoryImport } from "./gmail-history-import";
 import { TakeoutImport } from "./takeout-import";
 import { Badge } from "./ui/badge";
@@ -19,7 +18,13 @@ const receiptStatuses: Record<string, string> = {
   uploading: "Import incomplet",
 };
 
-export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
+export function InboundEmailSettings({
+  shopId,
+  openEmail,
+}: {
+  shopId: Id<"shops">;
+  openEmail: (id: Id<"emailReceipts">) => void;
+}) {
   const connection = useQuery(api.emailInbox.connection, { shopId });
   const receipts = useQuery(api.emailInbox.recent, { shopId });
   const saveSupportAddress = useMutation(api.emailInbox.saveSupportAddress);
@@ -30,7 +35,6 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<Id<"emailReceipts"> | null>(null);
 
   async function perform(task: () => Promise<unknown>, success = "") {
     setError("");
@@ -257,7 +261,7 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
                     variant="outline"
                     size="sm"
                     disabled={!receipt.hasOriginal}
-                    onClick={() => setSelected(receipt.id)}
+                    onClick={() => openEmail(receipt.id)}
                   >
                     Ouvrir
                   </Button>
@@ -279,7 +283,6 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
           </ul>
         )}
       </Card>
-      <EmailReaderDialog selected={selected} close={() => setSelected(null)} />
     </div>
   );
 }
