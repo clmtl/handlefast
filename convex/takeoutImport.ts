@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, query } from "./_generated/server";
+import { queueClassification } from "./emailClassification";
 import { getOrCreateConversationId } from "./inboundEmails";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { suppressAutoResponse, validMailbox } from "./lib/automaticReplyPolicy";
@@ -241,6 +242,7 @@ export const commit = internalMutation({
           });
       }
     }
+    if (incoming && !automatic) await queueClassification(ctx, receiptId);
     return "imported";
   },
 });

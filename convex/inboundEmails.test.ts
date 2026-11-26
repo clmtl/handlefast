@@ -188,6 +188,13 @@ describe("inbound email routing", () => {
       true,
     );
     expect(receipts.map((receipt) => receipt.source)).toEqual([source, source, source]);
+    expect(receipts[0].classificationJob?.classifyOnly ?? Boolean(receipts[0].classification)).toBe(
+      true,
+    );
+    expect(receipts[1].classificationJob).toBeUndefined();
+    expect(receipts[2].classificationJob?.classifyOnly ?? Boolean(receipts[2].classification)).toBe(
+      true,
+    );
     expect(await t.run((ctx) => ctx.db.query("automaticReplies").first())).toBeNull();
     expect(
       await owner.client.query(api.takeoutImport.thread, { receiptId: receipts[2]._id }),

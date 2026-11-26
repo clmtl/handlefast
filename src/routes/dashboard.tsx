@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   ArrowUpRight,
@@ -17,11 +17,11 @@ import {
   Truck,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoadingScreen, RequireAuth } from "@/components/auth-layout";
 import { AutomaticReplySettings } from "@/components/automatic-replies";
 import { DeliveryMonitoring } from "@/components/delivery-monitoring";
-import { EmailReaderDialog } from "@/components/email-reader-dialog";
+import { EmailConversationPage } from "@/components/email-conversation-page";
 import { EmailTriageInbox } from "@/components/email-triage-inbox";
 import { HumanReviewInbox } from "@/components/human-review-inbox";
 import { InboundEmailSettings } from "@/components/inbound-email-settings";
@@ -91,13 +91,17 @@ const roles = {
 export const Route = createFileRoute("/dashboard")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { view?: Section; shop?: string; review?: "in_progress" } => ({
+  ): { view?: Section; shop?: string; review?: "in_progress"; email?: Id<"emailReceipts"> } => ({
     view:
       typeof search.view === "string" && Object.hasOwn(sections, search.view)
         ? (search.view as Section)
         : undefined,
     shop: typeof search.shop === "string" ? search.shop : undefined,
     review: search.review === "in_progress" ? search.review : undefined,
+    email:
+      typeof search.email === "string" && /^[a-z0-9]{32}$/.test(search.email)
+        ? (search.email as Id<"emailReceipts">)
+        : undefined,
   }),
   component: () => (
     <RequireAuth>
@@ -109,8 +113,32 @@ export const Route = createFileRoute("/dashboard")({
 function Dashboard() {
   const viewer = useQuery(api.viewer.me);
   const navigate = useNavigate({ from: Route.fullPath });
+  const router = useRouter();
   const search = Route.useSearch();
   const section = search.view ?? "overview";
+  const lastOpener = useRef<HTMLElement | null>(null);
+  const wasReading = useRef(false);
+  const openedHere = useRef<Id<"emailReceipts"> | null>(null);
+  useEffect(() => {
+    if (!search.email && wasReading.current) {
+      lastOpener.current?.focus({ preventScroll: true });
+      openedHere.current = null;
+    }
+    wasReading.current = Boolean(search.email);
+  }, [search.email]);
+
+  function openEmail(email: Id<"emailReceipts">) {
+    openedHere.current = email;
+    lastOpener.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    void navigate({ search: (previous) => ({ ...previous, email }) });
+  }
+
+  function closeEmail() {
+    if (openedHere.current === search.email && router.history.canGoBack()) router.history.back();
+    else
+      void navigate({ search: (previous) => ({ ...previous, email: undefined }), replace: true });
+  }
 
   useEffect(() => {
     if (viewer && !viewer.hasCompletedOnboarding)
@@ -153,7 +181,9 @@ function Dashboard() {
                   value={shop._id}
                   className="max-w-32 sm:max-w-48"
                   onChange={(event) =>
-                    void navigate({ search: { ...search, shop: event.target.value } })
+                    void navigate({
+                      search: { ...search, shop: event.target.value, email: undefined },
+                    })
                   }
                 >
                   {viewer.shops.map((item) => (
@@ -194,51 +224,65 @@ function Dashboard() {
           </div>
         </header>
         <div className="mx-auto w-full max-w-[1460px] px-4 py-7 sm:px-7 lg:px-9 lg:py-9">
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-[2rem]">
-                {sections[section].label}
-              </h1>
-              {section === "overview" && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {shop?.name ?? viewer.organizations[0]?.name}
-                </p>
-              )}
-            </div>
-            {section === "shopify" &&
-              shop &&
-              organizationId &&
-              (role === "owner" || role === "admin") && (
-                <ImportShop organizationId={organizationId} />
-              )}
-          </div>
-          {shop ? (
-            <DashboardView
-              key={`${shop._id}:${section}:${search.review ?? ""}`}
+          {shop && search.email && (
+            <EmailConversationPage
+              key={search.email}
+              receiptId={search.email}
               shopId={shop._id}
-              section={section}
-              shop={search.shop}
-              review={search.review}
+              backLabel={
+                section === "reviews" || section === "inbox" ? "Retour à la liste" : "Retour"
+              }
+              onBack={closeEmail}
             />
-          ) : (
-            <Card className="max-w-2xl">
-              <CardHeader>
-                <span className="mb-2 grid size-11 place-items-center rounded-xl bg-accent text-primary">
-                  <ShoppingBag aria-hidden="true" />
-                </span>
-                <h2 className="text-lg font-semibold">Importer une boutique Shopify</h2>
-              </CardHeader>
-              <CardContent>
-                {organizationId && (role === "owner" || role === "admin") ? (
-                  <ShopifyGuidedConnect key={organizationId} organizationId={organizationId} />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Le propriétaire peut connecter une boutique pour commencer.
+          )}
+          <div hidden={Boolean(shop && search.email)}>
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-[2rem]">
+                  {sections[section].label}
+                </h1>
+                {section === "overview" && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {shop?.name ?? viewer.organizations[0]?.name}
                   </p>
                 )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
+              {section === "shopify" &&
+                shop &&
+                organizationId &&
+                (role === "owner" || role === "admin") && (
+                  <ImportShop organizationId={organizationId} />
+                )}
+            </div>
+            {shop ? (
+              <DashboardView
+                key={`${shop._id}:${section}:${search.review ?? ""}`}
+                shopId={shop._id}
+                section={section}
+                shop={search.shop}
+                review={search.review}
+                openEmail={openEmail}
+              />
+            ) : (
+              <Card className="max-w-2xl">
+                <CardHeader>
+                  <span className="mb-2 grid size-11 place-items-center rounded-xl bg-accent text-primary">
+                    <ShoppingBag aria-hidden="true" />
+                  </span>
+                  <h2 className="text-lg font-semibold">Importer une boutique Shopify</h2>
+                </CardHeader>
+                <CardContent>
+                  {organizationId && (role === "owner" || role === "admin") ? (
+                    <ShopifyGuidedConnect key={organizationId} organizationId={organizationId} />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Le propriétaire peut connecter une boutique pour commencer.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
@@ -361,31 +405,41 @@ function DashboardView({
   shopId,
   shop,
   review,
+  openEmail,
 }: {
   section: Section;
   shopId: Id<"shops">;
   shop?: string;
   review?: "in_progress";
+  openEmail: (id: Id<"emailReceipts">) => void;
 }) {
   switch (section) {
     case "inbox":
-      return <EmailTriageInbox shopId={shopId} />;
+      return <EmailTriageInbox shopId={shopId} openEmail={openEmail} />;
     case "reviews":
-      return <HumanReviewInbox shopId={shopId} initialStatus={review} />;
+      return <HumanReviewInbox shopId={shopId} initialStatus={review} openEmail={openEmail} />;
     case "replies":
       return <AutomaticReplySettings shopId={shopId} />;
     case "deliveries":
       return <DeliveryMonitoring shopId={shopId} />;
     case "email":
-      return <InboundEmailSettings shopId={shopId} />;
+      return <InboundEmailSettings shopId={shopId} openEmail={openEmail} />;
     case "shopify":
       return <ShopifySettings shopId={shopId} />;
     default:
-      return <Overview shopId={shopId} shop={shop} />;
+      return <Overview shopId={shopId} shop={shop} openEmail={openEmail} />;
   }
 }
 
-function Overview({ shopId, shop }: { shopId: Id<"shops">; shop?: string }) {
+function Overview({
+  shopId,
+  shop,
+  openEmail,
+}: {
+  shopId: Id<"shops">;
+  shop?: string;
+  openEmail: (id: Id<"emailReceipts">) => void;
+}) {
   const [asOf] = useState(Date.now);
   const counts = useQuery(api.humanReviews.overview, { shopId, asOf });
   const inbox = useQuery(api.emailTriage.list, {
@@ -398,7 +452,6 @@ function Overview({ shopId, shop }: { shopId: Id<"shops">; shop?: string }) {
   const commerce = useQuery(api.shopifyConnection.status, { shopId });
   const reply = useQuery(api.automaticReplySettings.get, { shopId });
   const delivery = useQuery(api.deliveryMonitoring.get, { shopId });
-  const [selected, setSelected] = useState<Id<"emailReceipts"> | null>(null);
   const emailStatus = mail
     ? mail.enabled
       ? mail.verified
@@ -532,7 +585,7 @@ function Overview({ shopId, shop }: { shopId: Id<"shops">; shop?: string }) {
                   <li key={item.id}>
                     <button
                       type="button"
-                      onClick={() => setSelected(item.id)}
+                      onClick={() => openEmail(item.id)}
                       className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-muted/45 focus-visible:bg-muted sm:px-5"
                     >
                       <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
@@ -601,7 +654,6 @@ function Overview({ shopId, shop }: { shopId: Id<"shops">; shop?: string }) {
           </CardContent>
         </Card>
       </div>
-      <EmailReaderDialog selected={selected} close={() => setSelected(null)} />
     </div>
   );
 }

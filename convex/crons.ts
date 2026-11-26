@@ -38,4 +38,9 @@ crons.interval(
   { minutes: 1 },
   internal.deliveryMonitoring.recover,
 );
+crons.interval(
+  "classify historical support emails",
+  { minutes: 1 },
+  internal.emailClassification.backfill,
+);
 export default crons;

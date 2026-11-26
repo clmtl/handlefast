@@ -136,6 +136,29 @@ async function fixture(
   return { t, shop, route, receiptId, token: receipt?.classificationJob?.token ?? "", receipt };
 }
 
+test("historical SAV receives an automatic classification without restarting reply processing", async () => {
+  const f = await fixture();
+  const existing = await f.t.run(async (ctx) => {
+    const receipt = await ctx.db.get(f.receiptId);
+    if (!receipt?.humanReview) throw new Error("Missing review");
+    const humanReview = { ...receipt.humanReview, status: "resolved" as const };
+    await ctx.db.patch(f.receiptId, { humanReview, classificationJob: undefined, source: "gmail" });
+    return humanReview;
+  });
+  expect(await f.t.mutation(internal.emailClassification.backfill, {})).toBe(1);
+  expect(await f.t.mutation(internal.emailClassification.backfill, {})).toBe(0);
+  const queued = await f.t.run((ctx) => ctx.db.get(f.receiptId));
+  if (!queued?.classificationJob) throw new Error("Missing classification job");
+  await f.t.action(internal.emailClassificationProcessing.process, {
+    receiptId: f.receiptId,
+    token: queued.classificationJob.token,
+  });
+  const result = await f.t.run((ctx) => ctx.db.get(f.receiptId));
+  expect(result?.classification).toEqual(automatic);
+  expect(result?.humanReview).toEqual(existing);
+  expect(await f.t.run((ctx) => ctx.db.query("automaticReplies").first())).toBeNull();
+});
+
 test("new SAV email schedules one classification, duplicate requests and execution do not duplicate AI calls", async () => {
   const f = await fixture();
   expect(f.token).not.toBe("");

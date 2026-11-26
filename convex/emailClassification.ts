@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, type MutationCtx, mutation, query } from "./_generated/server";
+import { env, internalMutation, type MutationCtx, mutation, query } from "./_generated/server";
 import { cancelAutomaticReply, routeSupportReply } from "./automaticReplies";
 import { requireShopMembership } from "./lib/authorization";
 import {
@@ -16,12 +16,17 @@ import {
 } from "./lib/emailClassificationPolicy";
 
 // Scheduling is transactional with ingestion; no Shopify/17TRACK operation is involved.
-export async function queueClassification(ctx: MutationCtx, receiptId: Id<"emailReceipts">) {
+export async function queueClassification(
+  ctx: MutationCtx,
+  receiptId: Id<"emailReceipts">,
+  { classifyOnly = false, delay = 0 } = {},
+) {
   const receipt = await ctx.db.get(receiptId);
   if (
     receipt?.triage?.bucket !== "sav" ||
     receipt.status !== "processed" ||
-    receipt.expiresAt <= Date.now()
+    receipt.expiresAt <= Date.now() ||
+    receipt.classification?.source === "manual"
   )
     return;
   if (
@@ -30,16 +35,50 @@ export async function queueClassification(ctx: MutationCtx, receiptId: Id<"email
   )
     return;
   const token = crypto.randomUUID();
-  await ctx.db.patch(receiptId, { classificationJob: { token, requestedAt: Date.now() } });
-  await ctx.scheduler.runAfter(0, internal.emailClassificationProcessing.process, {
+  await ctx.db.patch(receiptId, {
+    classificationJob: {
+      token,
+      requestedAt: Date.now() + delay,
+      classifyOnly: classifyOnly || receipt.source !== undefined || undefined,
+    },
+  });
+  await ctx.scheduler.runAfter(delay, internal.emailClassificationProcessing.process, {
     receiptId,
     token,
   });
-  await ctx.scheduler.runAfter(CLASSIFICATION_TIMEOUT_MS, internal.emailClassification.expireJob, {
-    receiptId,
-    token,
-  });
+  await ctx.scheduler.runAfter(
+    delay + CLASSIFICATION_TIMEOUT_MS,
+    internal.emailClassification.expireJob,
+    {
+      receiptId,
+      token,
+    },
+  );
 }
+
+// Catch up on existing SAV emails in bounded batches, starting with the newest.
+export const backfill = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    if (!env.OPENAI_API_KEY) return 0;
+    const receipts = await ctx.db
+      .query("emailReceipts")
+      .withIndex("by_bucket_status_classification_job_expiry", (q) =>
+        q
+          .eq("triage.bucket", "sav")
+          .eq("status", "processed")
+          .eq("classification.source", undefined)
+          .eq("classificationJob.requestedAt", undefined)
+          .gt("expiresAt", Date.now()),
+      )
+      .order("desc")
+      .take(80);
+    for (const [index, receipt] of receipts.entries())
+      await queueClassification(ctx, receipt._id, { classifyOnly: true, delay: index * 650 });
+    return receipts.length;
+  },
+});
 
 async function editableReceipt(ctx: MutationCtx, receiptId: Id<"emailReceipts">) {
   const receipt = await ctx.db.get(receiptId);
@@ -166,7 +205,13 @@ export const claim = internalMutation({
         break;
       }
     }
-    return classificationPrompt(message, previous);
+    return classificationPrompt(
+      {
+        ...message,
+        text: message.text ?? (message.html ? undefined : message.snippet),
+      },
+      previous,
+    );
   },
 });
 
@@ -186,7 +231,7 @@ async function saveAutomatic(
           classificationUpdatedBy: undefined,
         }),
   });
-  await routeSupportReply(ctx, receipt._id);
+  if (!receipt.classificationJob?.classifyOnly) await routeSupportReply(ctx, receipt._id);
 }
 
 export const complete = internalMutation({
