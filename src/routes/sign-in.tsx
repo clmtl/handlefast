@@ -2,6 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LogIn } from "lucide-react";
 import { useState } from "react";
 import { AuthPage, FieldError } from "@/components/auth-layout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/sign-in")({
@@ -16,11 +18,7 @@ function SignIn() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   return (
-    <AuthPage
-      eyebrow="Welcome back"
-      subtitle="Sign in to reach your HandleFast workspace and continue setting up support operations."
-      title="Access your support command center."
-    >
+    <AuthPage subtitle="Retrouve tes boutiques et tes demandes SAV." title="Se connecter">
       <form
         className="grid gap-4"
         onSubmit={(event) => {
@@ -32,9 +30,9 @@ function SignIn() {
           <label className="text-sm font-medium" htmlFor="email">
             Email
           </label>
-          <input
+          <Input
             autoComplete="email"
-            className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20"
+            className="h-11"
             id="email"
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@company.com"
@@ -44,11 +42,11 @@ function SignIn() {
         </div>
         <div className="grid gap-2">
           <label className="text-sm font-medium" htmlFor="password">
-            Password
+            Mot de passe
           </label>
-          <input
+          <Input
             autoComplete="current-password"
-            className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20"
+            className="h-11"
             id="password"
             onChange={(event) => setPassword(event.target.value)}
             type="password"
@@ -56,18 +54,14 @@ function SignIn() {
           />
         </div>
         <FieldError>{error}</FieldError>
-        <button
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-          disabled={isSubmitting}
-          type="submit"
-        >
+        <Button className="h-11" disabled={isSubmitting} type="submit">
           <LogIn className="size-4" aria-hidden="true" />
-          {isSubmitting ? "Signing in" : "Sign in"}
-        </button>
+          {isSubmitting ? "Connexion…" : "Se connecter"}
+        </Button>
         <p className="text-center text-sm text-muted-foreground">
-          New to HandleFast?{" "}
+          Tu découvres HandleFast ?{" "}
           <Link className="font-medium text-primary hover:underline" to="/sign-up">
-            Create an account
+            Créer un compte
           </Link>
         </p>
       </form>
@@ -86,7 +80,7 @@ function SignIn() {
     setIsSubmitting(false);
 
     if (result.error) {
-      setError(result.error.message ?? "Unable to sign in with these credentials.");
+      setError(result.error.message ?? "Impossible de se connecter.");
       return;
     }
 

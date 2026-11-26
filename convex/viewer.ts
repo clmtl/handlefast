@@ -32,7 +32,9 @@ export const me = query({
     const shops = activeOrganization
       ? await ctx.db
           .query("shops")
-          .withIndex("by_organizationId", (q) => q.eq("organizationId", activeOrganization._id))
+          .withIndex("by_organizationId_and_shopifyImportDomain", (q) =>
+            q.eq("organizationId", activeOrganization._id).eq("shopifyImportDomain", undefined),
+          )
           .take(20)
       : [];
 

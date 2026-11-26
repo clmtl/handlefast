@@ -32,7 +32,11 @@ async function fail(
   });
 }
 export const start = action({
-  args: { shopId: v.id("shops"), domain: v.string() },
+  args: {
+    shopId: v.optional(v.id("shops")),
+    organizationId: v.optional(v.id("organizations")),
+    domain: v.string(),
+  },
   returns: v.id("shopifyGuidedSessions"),
   handler: async (ctx, args): Promise<Id<"shopifyGuidedSessions">> => {
     const sessionId = await ctx.runMutation(refs.reserve, args),
@@ -194,7 +198,13 @@ export const callback = action({
       if (!scopes.includes("read_orders") || scopes.some((s) => s.startsWith("write_")))
         throw new Error("InvalidShopifyScopes");
       const data = z
-        .object({ shop: z.object({ id: z.string(), myshopifyDomain: z.string() }) })
+        .object({
+          shop: z.object({
+            id: z.string(),
+            name: z.string().optional(),
+            myshopifyDomain: z.string(),
+          }),
+        })
         .parse(await shopifyGraphql(session.domain, token.access_token, SHOP_QUERY));
       if (data.shop.myshopifyDomain !== session.domain) throw new Error("InvalidShopifyDomain");
       await shopifyGraphql(session.domain, token.access_token, ORDERS_QUERY, {
@@ -207,6 +217,7 @@ export const callback = action({
         oauthHash,
         clientId: credentials.clientId,
         shopifyShopId: data.shop.id,
+        shopName: data.shop.name,
         secret: await encrypt(credentials.clientSecret, `shopify:${session.shopId}`),
         token: await encrypt(token.access_token, `shopify:${session.shopId}`),
         tokenExpiresAt: Date.now() + Math.min(token.expires_in ?? 3600, 86400) * 1000,

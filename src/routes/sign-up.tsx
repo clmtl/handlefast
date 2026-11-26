@@ -2,6 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { MailCheck, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { AuthPage, FieldError } from "@/components/auth-layout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/sign-up")({
@@ -19,9 +21,8 @@ function SignUp() {
   if (isVerificationSent) {
     return (
       <AuthPage
-        eyebrow="Verify your email"
-        subtitle="Open the verification link sent to your inbox, then sign in to continue onboarding."
-        title="Check your inbox to finish."
+        subtitle="Ouvre le lien de vérification envoyé par email, puis connecte-toi à ton espace."
+        title="Vérifie ton adresse email"
       >
         <div className="grid gap-5 text-center">
           <MailCheck className="mx-auto size-10 text-primary" aria-hidden="true" />
@@ -29,7 +30,7 @@ function SignUp() {
             className="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
             to="/sign-in"
           >
-            Back to sign in
+            Revenir à la connexion
           </Link>
         </div>
       </AuthPage>
@@ -38,9 +39,8 @@ function SignUp() {
 
   return (
     <AuthPage
-      eyebrow="Create your workspace"
-      subtitle="Start with one owner account. Your first organization and shop are created during onboarding."
-      title="Build the foundation for faster support."
+      subtitle="Ton espace sera créé automatiquement après vérification de ton email."
+      title="Créer un compte"
     >
       <form
         className="grid gap-4"
@@ -51,11 +51,11 @@ function SignUp() {
       >
         <div className="grid gap-2">
           <label className="text-sm font-medium" htmlFor="name">
-            Name
+            Nom
           </label>
-          <input
+          <Input
             autoComplete="name"
-            className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20"
+            className="h-11"
             id="name"
             onChange={(event) => setName(event.target.value)}
             placeholder="Clement"
@@ -67,9 +67,9 @@ function SignUp() {
           <label className="text-sm font-medium" htmlFor="email">
             Email
           </label>
-          <input
+          <Input
             autoComplete="email"
-            className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20"
+            className="h-11"
             id="email"
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@company.com"
@@ -79,11 +79,11 @@ function SignUp() {
         </div>
         <div className="grid gap-2">
           <label className="text-sm font-medium" htmlFor="password">
-            Password
+            Mot de passe
           </label>
-          <input
+          <Input
             autoComplete="new-password"
-            className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20"
+            className="h-11"
             id="password"
             onChange={(event) => setPassword(event.target.value)}
             type="password"
@@ -91,18 +91,14 @@ function SignUp() {
           />
         </div>
         <FieldError>{error}</FieldError>
-        <button
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-          disabled={isSubmitting}
-          type="submit"
-        >
+        <Button className="h-11" disabled={isSubmitting} type="submit">
           <UserPlus className="size-4" aria-hidden="true" />
-          {isSubmitting ? "Creating account" : "Create account"}
-        </button>
+          {isSubmitting ? "Création du compte…" : "Créer un compte"}
+        </Button>
         <p className="text-center text-sm text-muted-foreground">
-          Already have an account?{" "}
+          Tu as déjà un compte ?{" "}
           <Link className="font-medium text-primary hover:underline" to="/sign-in">
-            Sign in
+            Se connecter
           </Link>
         </p>
       </form>
@@ -113,7 +109,7 @@ function SignUp() {
     setError("");
 
     if (password.length < 8) {
-      setError("Use at least 8 characters for your password.");
+      setError("Utilise au moins 8 caractères pour ton mot de passe.");
       return;
     }
 
@@ -129,7 +125,7 @@ function SignUp() {
     setIsSubmitting(false);
 
     if (result.error) {
-      setError(result.error.message ?? "Unable to create this account.");
+      setError(result.error.message ?? "Impossible de créer le compte.");
       return;
     }
 

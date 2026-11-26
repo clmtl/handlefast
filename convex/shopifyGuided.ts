@@ -10,9 +10,14 @@ import {
   type QueryCtx,
   query,
 } from "./_generated/server";
-import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
+import {
+  assertCanManageOrganization,
+  requireMembership,
+  requireShopMembership,
+} from "./lib/authorization";
 import { shopDomain } from "./lib/commerceModel";
 import { guidedDoc, guidedPublic, SHOPIFY_APP_NAME_MAX_LENGTH } from "./lib/shopifyGuidedModel";
+import { createShop, initializeShop } from "./onboarding";
 import { storeConnection } from "./shopifyConnection";
 
 async function owned(ctx: QueryCtx | MutationCtx, id: Id<"shopifyGuidedSessions">) {
@@ -29,19 +34,57 @@ async function owned(ctx: QueryCtx | MutationCtx, id: Id<"shopifyGuidedSessions"
   return session;
 }
 export const reserve = internalMutation({
-  args: { shopId: v.id("shops"), domain: v.string() },
+  args: {
+    shopId: v.optional(v.id("shops")),
+    organizationId: v.optional(v.id("organizations")),
+    domain: v.string(),
+  },
   returns: v.id("shopifyGuidedSessions"),
   handler: async (ctx, args) => {
-    const { membership, profile, shop } = await requireShopMembership(ctx, args.shopId);
-    assertCanManageOrganization(membership);
-    if (shop.status === "disabled") throw new ConvexError("ShopDisabled");
-    if (!env.COMMERCE_ENCRYPTION_KEY) throw new ConvexError("CommerceEncryptionNotConfigured");
     const domain = shopDomain(args.domain);
+    const { shopId, organizationId: targetOrganization } = args;
+    if (shopId && targetOrganization) throw new ConvexError("InvalidShopTarget");
+    const auth = targetOrganization
+      ? await requireMembership(ctx, targetOrganization)
+      : shopId
+        ? await requireShopMembership(ctx, shopId)
+        : null;
+    if (!auth) throw new ConvexError("InvalidShopTarget");
+    const { membership, profile } = auth;
+    assertCanManageOrganization(membership);
+    if (!env.COMMERCE_ENCRYPTION_KEY) throw new ConvexError("CommerceEncryptionNotConfigured");
+    const organizationId = membership.organizationId;
     const connected = await ctx.db
       .query("shopifyConnections")
       .withIndex("by_domain", (q) => q.eq("domain", domain))
       .unique();
-    if (connected && connected.shopId !== shop._id) throw new ConvexError("ShopAlreadyConnected");
+    if (connected && connected.shopId !== args.shopId)
+      throw new ConvexError("ShopAlreadyConnected");
+    let shop = args.shopId
+      ? await ctx.db.get(args.shopId)
+      : await ctx.db
+          .query("shops")
+          .withIndex("by_organizationId_and_shopifyImportDomain", (q) =>
+            q.eq("organizationId", organizationId).eq("shopifyImportDomain", domain),
+          )
+          .unique();
+    if (!shop) {
+      const shops = await ctx.db
+        .query("shops")
+        .withIndex("by_organizationId_and_shopifyImportDomain", (q) =>
+          q.eq("organizationId", organizationId).eq("shopifyImportDomain", undefined),
+        )
+        .take(20);
+      if (shops.length >= 20) throw new ConvexError("ShopLimitReached");
+      const created = await createShop(ctx, organizationId, domain.split(".")[0], domain);
+      shop = await ctx.db.get(created.shopId);
+    }
+    if (
+      !shop ||
+      shop.status === "disabled" ||
+      (shop.shopifyImportDomain && shop.shopifyImportDomain !== domain)
+    )
+      throw new ConvexError("ShopDisabled");
     const recent = await ctx.db
       .query("shopifyGuidedSessions")
       .withIndex("by_profileId", (q) => q.eq("profileId", profile._id))
@@ -354,6 +397,7 @@ export const complete = internalMutation({
     oauthHash: v.string(),
     clientId: v.string(),
     shopifyShopId: v.string(),
+    shopName: v.optional(v.string()),
     secret: v.string(),
     token: v.string(),
     tokenExpiresAt: v.number(),
@@ -372,7 +416,22 @@ export const complete = internalMutation({
       op?.clientId !== args.clientId
     )
       throw new ConvexError("ShopifySessionChanged");
-    const { sessionId: _, lease: __, oauthHash: ___, ...credentials } = args;
+    const { sessionId: _, lease: __, oauthHash: ___, shopName, ...credentials } = args;
+    const shop = await ctx.db.get(s.shopId);
+    if (shop?.shopifyImportDomain) {
+      const shops = await ctx.db
+        .query("shops")
+        .withIndex("by_organizationId_and_shopifyImportDomain", (q) =>
+          q.eq("organizationId", s.organizationId).eq("shopifyImportDomain", undefined),
+        )
+        .take(20);
+      if (shops.length >= 20) throw new ConvexError("ShopLimitReached");
+      await initializeShop(ctx, s.shopId, s.organizationId);
+      await ctx.db.patch(s.shopId, {
+        shopifyImportDomain: undefined,
+        name: shopName?.trim().slice(0, 100) || shop.name,
+      });
+    }
     await storeConnection(ctx, {
       ...credentials,
       shopId: s.shopId,

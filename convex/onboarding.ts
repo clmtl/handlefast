@@ -60,8 +60,10 @@ export const bootstrap = mutation({
     if (existingMembership.length > 0) {
       const existingShop = await ctx.db
         .query("shops")
-        .withIndex("by_organizationId", (q) =>
-          q.eq("organizationId", existingMembership[0].organizationId),
+        .withIndex("by_organizationId_and_shopifyImportDomain", (q) =>
+          q
+            .eq("organizationId", existingMembership[0].organizationId)
+            .eq("shopifyImportDomain", undefined),
         )
         .take(1);
       const inboundEmailRoute = existingShop[0]
@@ -82,8 +84,13 @@ export const bootstrap = mutation({
       };
     }
 
-    const organizationName = args.organizationName?.trim() || `${profileName}'s organization`;
-    const organizationSlug = await getAvailableOrganizationSlug(ctx, organizationName);
+    const organizationName = args.organizationName?.trim() || `Espace de ${profileName}`;
+    const organizationSlug = await getAvailableOrganizationSlug(
+      ctx,
+      args.organizationName?.trim()
+        ? organizationName
+        : `${organizationName}-${profile._id.slice(-10)}`,
+    );
     const organizationId = await ctx.db.insert("organizations", {
       name: organizationName,
       slug: organizationSlug,
@@ -99,17 +106,14 @@ export const bootstrap = mutation({
       updatedAt: now,
     });
 
-    const { shopId, inboundEmailRouteId } = await createShop(
-      ctx,
-      organizationId,
-      args.shopName?.trim() || "Primary shop",
-    );
+    // Explicit shop names are accepted for older clients; signup starts with an empty workspace.
+    const shopName = args.shopName?.trim();
+    const shop = shopName ? await createShop(ctx, organizationId, shopName) : {};
 
     return {
       profileId: profile._id,
       organizationId,
-      shopId,
-      inboundEmailRouteId,
+      ...shop,
       created: true,
     };
   },
@@ -119,6 +123,7 @@ export async function createShop(
   ctx: MutationCtx,
   organizationId: Id<"organizations">,
   name: string,
+  shopifyImportDomain?: string,
 ) {
   const baseSlug = slugify(name);
   let slug = baseSlug;
@@ -139,10 +144,21 @@ export async function createShop(
     name,
     slug,
     platform: "manual",
+    shopifyImportDomain,
     status: "setup",
     createdAt: now,
     updatedAt: now,
   });
+  if (shopifyImportDomain) return { shopId };
+  return await initializeShop(ctx, shopId, organizationId, now);
+}
+
+export async function initializeShop(
+  ctx: MutationCtx,
+  shopId: Id<"shops">,
+  organizationId: Id<"organizations">,
+  now = Date.now(),
+) {
   await ctx.db.insert("shopSettings", {
     organizationId,
     shopId,
