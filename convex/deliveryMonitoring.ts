@@ -111,7 +111,10 @@ export const save = mutation({
         ([key, value]) =>
           JSON.stringify(existing[key as keyof typeof config]) === JSON.stringify(value),
       );
-    if (same && existing.mode === mode) return null;
+    if (same && existing.mode === mode) {
+      if (mode === "simulation") await startScan(ctx, existing, true);
+      return null;
+    }
     if (mode === "live") {
       const connection = await ctx.db
         .query("shopifyConnections")

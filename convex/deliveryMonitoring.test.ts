@@ -320,6 +320,18 @@ test("default configuration is absent; simulation is the first configured mode a
   });
   expect(list.page[0]).toMatchObject({ simulation: true, reason: "eligible" });
   expect(list.page[0].text).toContain("#QA8001");
+
+  const previous = await policy(f);
+  await f.shop.client.mutation(api.deliveryMonitoring.save, {
+    shopId: f.shop.shopId,
+    mode: "simulation",
+    ...config,
+  });
+  expect(await policy(f)).toMatchObject({
+    scanToken: expect.any(String),
+    revision: previous?.revision,
+    nextRunAt: previous?.nextRunAt,
+  });
 });
 
 test("manual simulation leaves a due live scan available without sending", async () => {
