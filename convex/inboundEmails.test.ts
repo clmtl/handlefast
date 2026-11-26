@@ -114,6 +114,78 @@ function inboundPayload(
 }
 
 describe("inbound email routing", () => {
+  test("imports a Takeout thread once and keeps only the unanswered message open", async () => {
+    const t = createTestBackend();
+    const owner = await createWorkspace(t, "takeout-owner");
+    const outsider = await createWorkspace(t, "takeout-outsider");
+    const shopId = owner.shopId;
+    const address = "support@shop.example";
+    const customer = "customer@example.com";
+    await owner.client.mutation(api.emailInbox.saveSupportAddress, {
+      shopId,
+      supportEmail: address,
+    });
+    const path = `/takeout/message?shop=${shopId}`;
+    const raw = (id: string, from: string, to: string, age: number, reply?: string) =>
+      [
+        `From: ${from}`,
+        `To: ${to}`,
+        "Subject: Order from last week",
+        `Date: ${new Date(Date.now() - age * 1000).toUTCString()}`,
+        `Message-ID: <${id}@example.com>`,
+        ...(reply ? [`In-Reply-To: <${reply}@example.com>`] : []),
+        "",
+        "Message original",
+      ].join("\r\n");
+    const request = (body: string) => ({
+      method: "POST",
+      headers: { "Content-Type": "message/rfc822" },
+      body,
+    });
+    const first = raw("takeout-first", customer, address, 90);
+    expect((await t.fetch(path, request(first))).status).toBe(401);
+    expect((await outsider.client.fetch(path, request(first))).status).toBe(403);
+    async function load(body: string) {
+      const response = await owner.client.fetch(path, request(body));
+      expect(response.status).toBe(200);
+      return response.json();
+    }
+    expect(await load(raw("not-this-shop", customer, "other@shop.example", 120))).toEqual({
+      result: "skipped",
+    });
+    expect(await load(first)).toEqual({ result: "imported" });
+    expect(await load(raw("takeout-second", address, customer, 60, "takeout-first"))).toEqual({
+      result: "imported",
+    });
+    expect(await load(raw("takeout-third", customer, address, 30, "takeout-second"))).toEqual({
+      result: "imported",
+    });
+    expect(await load(first)).toEqual({ result: "duplicate" });
+
+    const receipts = await t.run((ctx) =>
+      ctx.db
+        .query("emailReceipts")
+        .withIndex("by_shopId_and_receivedAt", (q) => q.eq("shopId", shopId))
+        .take(4),
+    );
+    expect(receipts.map((receipt) => receipt.humanReview?.status)).toEqual([
+      "resolved",
+      undefined,
+      "open",
+    ]);
+    expect(receipts.every((receipt) => receipt.autoReplyEligibility?.eligible === false)).toBe(
+      true,
+    );
+    expect(await t.run((ctx) => ctx.db.query("automaticReplies").first())).toBeNull();
+    expect(
+      await owner.client.query(api.takeoutImport.thread, { receiptId: receipts[2]._id }),
+    ).toMatchObject([
+      { direction: "inbound" },
+      { direction: "outbound" },
+      { direction: "inbound" },
+    ]);
+  });
+
   test("verifies reception on the first ordinary email to the configured support address", async () => {
     const t = createTestBackend();
     const workspace = await createWorkspace(t, "ordinary-forward");

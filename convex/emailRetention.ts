@@ -34,7 +34,6 @@ async function removeMessage(ctx: MutationCtx, messageId: Id<"supportMessages">)
   else
     await ctx.db.patch(message.conversationId, {
       subject: sibling.subject,
-      customerEmail: sibling.from.address,
       lastMessageAt: sibling.receivedAt,
       updatedAt: Date.now(),
     });

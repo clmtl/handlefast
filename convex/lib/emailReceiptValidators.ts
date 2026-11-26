@@ -21,6 +21,7 @@ export const receiptFields = {
   sha256: v.string(),
   rawSize: v.number(),
   rawStorageId: v.optional(v.id("_storage")),
+  source: v.optional(v.literal("takeout")),
   status: receiptStatus,
   receivedAt: v.number(),
   expiresAt: v.number(),

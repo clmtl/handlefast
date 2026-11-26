@@ -69,6 +69,8 @@ import type * as shopifyGuided from "../shopifyGuided.js";
 import type * as shopifyGuidedActions from "../shopifyGuidedActions.js";
 import type * as shopifySync from "../shopifySync.js";
 import type * as shops from "../shops.js";
+import type * as takeoutHttp from "../takeoutHttp.js";
+import type * as takeoutImport from "../takeoutImport.js";
 import type * as viewer from "../viewer.js";
 
 import type {
@@ -139,6 +141,8 @@ declare const fullApi: ApiFromModules<{
   shopifyGuidedActions: typeof shopifyGuidedActions;
   shopifySync: typeof shopifySync;
   shops: typeof shops;
+  takeoutHttp: typeof takeoutHttp;
+  takeoutImport: typeof takeoutImport;
   viewer: typeof viewer;
 }>;
 

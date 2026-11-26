@@ -5,11 +5,13 @@ import { env, httpAction } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
 import { shopifyWebhook, trackingWebhook } from "./commerceHttp";
 import { verifyWebhookSignature } from "./lib/webhookSignatures";
+import { takeoutMessage } from "./takeoutHttp";
 
 const http = httpRouter();
 const maxWebhookBytes = 16_384;
 
 authComponent.registerRoutes(http, createAuth);
+http.route({ path: "/takeout/message", method: "POST", handler: takeoutMessage });
 http.route({ path: "/webhooks/shopify", method: "POST", handler: shopifyWebhook });
 http.route({ path: "/webhooks/17track", method: "POST", handler: trackingWebhook });
 
