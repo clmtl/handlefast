@@ -45,6 +45,7 @@ export const receiptFields = {
     v.object({
       token: v.string(),
       requestedAt: v.number(),
+      classifyOnly: v.optional(v.boolean()),
       startedAt: v.optional(v.number()),
     }),
   ),

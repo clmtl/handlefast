@@ -12,7 +12,11 @@ export function messageText(message: Doc<"supportMessages">) {
 export const translationTarget = v.union(v.id("supportMessages"), v.id("automaticReplies"));
 
 export const timeline = query({
-  args: { receiptId: v.id("emailReceipts"), includeOlder: v.boolean() },
+  args: {
+    receiptId: v.id("emailReceipts"),
+    includeOlder: v.boolean(),
+    shopId: v.optional(v.id("shops")),
+  },
   returns: v.array(
     v.object({
       id: translationTarget,
@@ -26,10 +30,10 @@ export const timeline = query({
       attachmentCount: v.number(),
     }),
   ),
-  handler: async (ctx, { receiptId, includeOlder }) => {
+  handler: async (ctx, { receiptId, includeOlder, shopId }) => {
     const receipt = await ctx.db.get(receiptId);
     const now = Date.now();
-    if (!receipt || receipt.expiresAt <= now) return [];
+    if (!receipt || receipt.expiresAt <= now || (shopId && receipt.shopId !== shopId)) return [];
     await requireShopMembership(ctx, receipt.shopId);
     const message = await ctx.db
       .query("supportMessages")

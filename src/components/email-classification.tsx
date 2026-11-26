@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
-import { useState } from "react";
+import { Pencil } from "lucide-react";
+import { useId, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
@@ -10,8 +11,9 @@ import {
   priorities,
 } from "../../convex/lib/emailClassificationPolicy";
 
-const button =
-  "rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
+import { Button } from "./ui/button";
+import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+
 const priorityStyle: Record<Priority, string> = {
   low: "border-slate-500 bg-slate-50 text-slate-800",
   normal: "border-blue-600 bg-blue-50 text-blue-900",
@@ -69,144 +71,118 @@ export function ClassificationBadges({
   );
 }
 
-export function ClassificationControls({
-  receiptId,
-  classification,
-  pending,
-  canCorrect,
-}: {
-  receiptId: Id<"emailReceipts">;
-  classification: Classification | null;
-  pending: boolean;
-  canCorrect: boolean;
-}) {
+export function EmailClassification({ receiptId }: { receiptId: Id<"emailReceipts"> }) {
+  const value = useQuery(api.emailClassification.get, { receiptId });
+  const fieldId = useId();
   const correct = useMutation(api.emailClassification.correct);
-  const request = useMutation(api.emailClassification.request);
-  const [editing, setEditing] = useState(false);
-  const [category, setCategory] = useState<Category>(classification?.category ?? "other");
-  const [priority, setPriority] = useState<Priority>(classification?.priority ?? "normal");
+  const [draft, setDraft] = useState<{ category: Category; priority: Priority } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  async function perform(action: () => Promise<unknown>) {
+  const [error, setError] = useState(false);
+  if (!value) return null;
+
+  async function save(values: { category: Category; priority: Priority }) {
     setBusy(true);
-    setError("");
+    setError(false);
     try {
-      await action();
-      setEditing(false);
+      await correct({ receiptId, ...values });
+      setDraft(null);
     } catch {
-      setError("Le classement n’a pas pu être enregistré. Réessayez.");
+      setError(true);
     } finally {
       setBusy(false);
     }
   }
-  return (
-    <div className="mt-3">
-      {classification && (
-        <p className="break-words text-sm text-muted-foreground">{classification.reason}</p>
-      )}
-      {!classification && !pending && (
-        <p className="text-sm text-muted-foreground">
-          Cet email n’a pas encore de catégorie ni d’importance.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="mt-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      {canCorrect && (
-        <>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={button}
-              disabled={busy}
-              onClick={() => {
-                setCategory(classification?.category ?? "other");
-                setPriority(classification?.priority ?? "normal");
-                setEditing(true);
-              }}
-            >
-              Modifier le classement
-            </button>
-            {classification?.source !== "manual" && (
-              <button
-                type="button"
-                className={button}
-                disabled={busy || pending}
-                onClick={() => void perform(() => request({ receiptId }))}
-              >
-                {classification ? "Relancer l’analyse" : "Analyser cet email"}
-              </button>
-            )}
-          </div>
-          {editing && (
-            <form
-              className="mt-3 flex flex-wrap items-end gap-3 rounded-md border bg-background p-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void perform(() => correct({ receiptId, category, priority }));
-              }}
-            >
-              <label className="grid gap-1 text-sm">
-                Catégorie
-                <select
-                  className={`${button} max-w-full`}
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value as Category)}
-                >
-                  {Object.entries(categories).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm">
-                Importance
-                <select
-                  className={button}
-                  value={priority}
-                  onChange={(event) => setPriority(event.target.value as Priority)}
-                >
-                  {Object.entries(priorities).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="submit"
-                disabled={busy}
-                className={`${button} bg-primary text-primary-foreground hover:bg-primary/90`}
-              >
-                Enregistrer
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                className={button}
-                onClick={() => setEditing(false)}
-              >
-                Annuler
-              </button>
-            </form>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
 
-export function EmailClassification({ receiptId }: { receiptId: Id<"emailReceipts"> }) {
-  const value = useQuery(api.emailClassification.get, { receiptId });
-  if (!value) return null;
+  const { classification, pending, canCorrect } = value;
   return (
-    <section className="mt-4 rounded-md border p-4" aria-label="Classement SAV">
-      <h3 className="font-semibold">Catégorie et importance</h3>
-      <ClassificationBadges classification={value.classification} pending={value.pending} />
-      <ClassificationControls receiptId={receiptId} {...value} />
+    <section className="rounded-xl border bg-card p-4" aria-label="Catégorie et importance">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Catégorie et importance</h2>
+        {canCorrect && !draft && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            aria-label="Modifier la catégorie et l’importance"
+            onClick={() =>
+              setDraft({
+                category: classification?.category ?? "other",
+                priority: classification?.priority ?? "normal",
+              })
+            }
+          >
+            <Pencil aria-hidden="true" /> Modifier
+          </Button>
+        )}
+      </div>
+      {draft ? (
+        <form
+          className="mt-3 grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save(draft);
+          }}
+        >
+          <label htmlFor={`${fieldId}-category`} className="grid gap-1.5 text-xs font-medium">
+            Catégorie
+            <NativeSelect
+              id={`${fieldId}-category`}
+              value={draft.category}
+              className="w-full"
+              onChange={(event) => setDraft({ ...draft, category: event.target.value as Category })}
+            >
+              {Object.entries(categories).map(([value, label]) => (
+                <NativeSelectOption key={value} value={value}>
+                  {label}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
+          <label htmlFor={`${fieldId}-priority`} className="grid gap-1.5 text-xs font-medium">
+            Importance
+            <NativeSelect
+              id={`${fieldId}-priority`}
+              value={draft.priority}
+              className="w-full"
+              onChange={(event) => setDraft({ ...draft, priority: event.target.value as Priority })}
+            >
+              {Object.entries(priorities).map(([value, label]) => (
+                <NativeSelectOption key={value} value={value}>
+                  {label}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={busy} type="submit">
+              Enregistrer
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              type="button"
+              onClick={() => {
+                setDraft(null);
+                setError(false);
+              }}
+            >
+              Annuler
+            </Button>
+          </div>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              Impossible d’enregistrer le classement.
+            </p>
+          )}
+        </form>
+      ) : classification ? (
+        <ClassificationBadges classification={classification} pending={pending} />
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground" role="status">
+          {pending ? "Classement en cours…" : "Classement automatique en attente"}
+        </p>
+      )}
     </section>
   );
 }

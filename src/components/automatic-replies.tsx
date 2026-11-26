@@ -245,12 +245,18 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
   );
 }
 
-export function AutomaticReplyPanel({ receiptId }: { receiptId: Id<"emailReceipts"> }) {
+export function AutomaticReplyPanel({
+  receiptId,
+  showSent = true,
+}: {
+  receiptId: Id<"emailReceipts">;
+  showSent?: boolean;
+}) {
   const reply = useQuery(api.automaticReplies.forEmail, { receiptId });
   const cancel = useMutation(api.automaticReplies.cancel);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  if (!reply) return null;
+  if (!reply || (!showSent && reply.status === "sent")) return null;
   async function takeOver() {
     setBusy(true);
     setError("");

@@ -5,7 +5,6 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { categories, priorities } from "../../convex/lib/emailClassificationPolicy";
 import { reviewStatuses } from "../../convex/lib/humanReviewPolicy";
-import { EmailReaderDialog } from "./email-reader-dialog";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -17,9 +16,11 @@ type Status = keyof typeof reviewStatuses;
 export function HumanReviewInbox({
   shopId,
   initialStatus = "open",
+  openEmail,
 }: {
   shopId: Id<"shops">;
   initialStatus?: Status;
+  openEmail: (id: Id<"emailReceipts">) => void;
 }) {
   const [asOf] = useState(Date.now);
   const [status, setStatus] = useState<Status>(initialStatus);
@@ -44,7 +45,13 @@ export function HumanReviewInbox({
           </TabsList>
         </div>
         <TabsContent value={status}>
-          <ReviewList key={status} shopId={shopId} status={status} asOf={asOf} />
+          <ReviewList
+            key={status}
+            shopId={shopId}
+            status={status}
+            asOf={asOf}
+            openEmail={openEmail}
+          />
         </TabsContent>
       </Tabs>
     </Card>
@@ -55,17 +62,18 @@ function ReviewList({
   shopId,
   status,
   asOf,
+  openEmail,
 }: {
   shopId: Id<"shops">;
   status: Status;
   asOf: number;
+  openEmail: (id: Id<"emailReceipts">) => void;
 }) {
   const {
     results,
     status: loading,
     loadMore,
   } = usePaginatedQuery(api.humanReviews.list, { shopId, status, asOf }, { initialNumItems: 20 });
-  const [selected, setSelected] = useState<Id<"emailReceipts"> | null>(null);
   return (
     <>
       {loading === "LoadingFirstPage" ? (
@@ -87,7 +95,7 @@ function ReviewList({
             <button
               type="button"
               className="flex w-full items-center gap-4 p-4 text-left hover:bg-muted/40 sm:px-5"
-              onClick={() => setSelected(item.receiptId)}
+              onClick={() => openEmail(item.receiptId)}
             >
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">{item.subject}</span>
@@ -128,7 +136,6 @@ function ReviewList({
           </Button>
         </div>
       )}
-      <EmailReaderDialog selected={selected} close={() => setSelected(null)} />
     </>
   );
 }
