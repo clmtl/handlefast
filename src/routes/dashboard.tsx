@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import {
   ArrowUpRight,
   Bot,
@@ -25,6 +25,7 @@ import { EmailReaderDialog } from "@/components/email-reader-dialog";
 import { EmailTriageInbox } from "@/components/email-triage-inbox";
 import { HumanReviewInbox } from "@/components/human-review-inbox";
 import { InboundEmailSettings } from "@/components/inbound-email-settings";
+import { ShopifyGuidedConnect } from "@/components/shopify-guided-connect";
 import { ShopifySettings } from "@/components/shopify-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -43,7 +43,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import {
   Sidebar,
@@ -121,9 +120,8 @@ function Dashboard() {
   if (!viewer?.hasCompletedOnboarding) return <LoadingScreen label="Chargement de ton espace…" />;
   const shop = viewer.shops.find((item) => item._id === search.shop) ?? viewer.shops[0];
   const profile = viewer.profile;
-  const role = viewer.memberships.find(
-    (member) => member.organizationId === shop?.organizationId,
-  )?.role;
+  const organizationId = shop?.organizationId ?? viewer.organizations[0]?._id;
+  const role = viewer.memberships.find((member) => member.organizationId === organizationId)?.role;
 
   return (
     <SidebarProvider
@@ -207,12 +205,12 @@ function Dashboard() {
                 </p>
               )}
             </div>
-            {section === "shopify" && shop && (role === "owner" || role === "admin") && (
-              <AddShop
-                organizationId={shop.organizationId}
-                onAdded={(shopId) => void navigate({ search: { view: "shopify", shop: shopId } })}
-              />
-            )}
+            {section === "shopify" &&
+              shop &&
+              organizationId &&
+              (role === "owner" || role === "admin") && (
+                <ImportShop organizationId={organizationId} />
+              )}
           </div>
           {shop ? (
             <DashboardView
@@ -223,8 +221,22 @@ function Dashboard() {
               review={search.review}
             />
           ) : (
-            <Card>
-              <CardContent>Aucune boutique dans cet espace.</CardContent>
+            <Card className="max-w-2xl">
+              <CardHeader>
+                <span className="mb-2 grid size-11 place-items-center rounded-xl bg-accent text-primary">
+                  <ShoppingBag aria-hidden="true" />
+                </span>
+                <h2 className="text-lg font-semibold">Importer une boutique Shopify</h2>
+              </CardHeader>
+              <CardContent>
+                {organizationId && (role === "owner" || role === "admin") ? (
+                  <ShopifyGuidedConnect key={organizationId} organizationId={organizationId} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Le propriétaire peut connecter une boutique pour commencer.
+                  </p>
+                )}
+              </CardContent>
             </Card>
           )}
         </div>
@@ -233,75 +245,22 @@ function Dashboard() {
   );
 }
 
-function AddShop({
-  organizationId,
-  onAdded,
-}: {
-  organizationId: Id<"organizations">;
-  onAdded: (id: Id<"shops">) => void;
-}) {
-  const add = useMutation(api.shops.add);
+function ImportShop({ organizationId }: { organizationId: Id<"organizations"> }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   return (
     <>
       <Button onClick={() => setOpen(true)}>
-        <Plus /> Ajouter une boutique
+        <Plus /> Importer une boutique
       </Button>
-      <Dialog
-        open={open}
-        onOpenChange={(value) => {
-          if (!busy) setOpen(value);
-        }}
-      >
+      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Ajouter une boutique</DialogTitle>
+            <DialogTitle>Importer une boutique Shopify</DialogTitle>
             <DialogDescription>
-              Donne-lui un nom, puis lance la connexion Shopify.
+              La boutique apparaîtra après la confirmation dans Shopify.
             </DialogDescription>
           </DialogHeader>
-          <form
-            className="space-y-4"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              setBusy(true);
-              setError("");
-              try {
-                const id = await add({ organizationId, name });
-                setName("");
-                setOpen(false);
-                onAdded(id);
-              } catch {
-                setError("Impossible d’ajouter la boutique.");
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <label className="block text-sm" htmlFor="new-shop-name">
-              Nom de la boutique
-            </label>
-            <Input
-              id="new-shop-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-              maxLength={100}
-            />
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <DialogFooter>
-              <Button type="submit" disabled={busy || !name.trim()}>
-                Créer la boutique
-              </Button>
-            </DialogFooter>
-          </form>
+          <ShopifyGuidedConnect key={organizationId} organizationId={organizationId} />
         </DialogContent>
       </Dialog>
     </>

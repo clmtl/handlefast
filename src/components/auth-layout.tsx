@@ -1,39 +1,36 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useConvexAuth } from "convex/react";
+import { LoaderCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { Brand } from "./brand";
+import { Card, CardContent, CardHeader } from "./ui/card";
 
 export function AuthPage({
   children,
-  eyebrow,
   title,
   subtitle,
 }: Readonly<{
   children: ReactNode;
-  eyebrow: string;
   title: string;
   subtitle: string;
 }>) {
   return (
-    <main className="grid min-h-dvh bg-background text-foreground lg:grid-cols-[1fr_480px]">
-      <section className="flex min-h-[42dvh] flex-col justify-between border-b bg-card px-6 py-8 lg:min-h-dvh lg:border-r lg:border-b-0 lg:px-10">
-        <div className="text-lg font-semibold">HandleFast</div>
-        <div className="max-w-2xl py-12 lg:py-0">
-          <div className="text-sm font-medium text-primary">{eyebrow}</div>
-          <h1 className="mt-4 text-4xl font-semibold tracking-normal text-balance md:text-5xl">
-            {title}
-          </h1>
-          <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">{subtitle}</p>
+    <main lang="fr" className="hf-dashboard flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="border-b bg-card">
+        <div className="mx-auto max-w-7xl px-5 py-4 sm:px-8">
+          <Brand />
         </div>
-        <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3 lg:grid-cols-1">
-          <span>Multi-shop accounts</span>
-          <span>Secure support workflows</span>
-          <span>Ready for email and Shopify</span>
-        </div>
-      </section>
-      <section className="flex items-center justify-center px-5 py-8">
-        <div className="w-full max-w-sm">{children}</div>
-      </section>
+      </header>
+      <div className="grid flex-1 place-items-center px-4 py-8 sm:py-12">
+        <Card className="w-full max-w-md border-border shadow-lg shadow-primary/5">
+          <CardHeader>
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <p className="text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
+          </CardHeader>
+          <CardContent>{children}</CardContent>
+        </Card>
+      </div>
     </main>
   );
 }
@@ -49,7 +46,7 @@ export function RequireAuth({ children }: Readonly<{ children: ReactNode }>) {
   }, [isAuthenticated, isLoading, navigate]);
 
   if (isLoading) {
-    return <LoadingScreen label="Checking your session" />;
+    return <LoadingScreen label="Vérification de ta session…" />;
   }
 
   if (!isAuthenticated) {
@@ -61,8 +58,15 @@ export function RequireAuth({ children }: Readonly<{ children: ReactNode }>) {
 
 export function LoadingScreen({ label }: Readonly<{ label: string }>) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-5 text-foreground">
-      <div className="rounded-md border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
+    <main
+      lang="fr"
+      className="hf-dashboard flex min-h-dvh items-center justify-center bg-background px-5 text-foreground"
+    >
+      <div
+        role="status"
+        className="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm"
+      >
+        <LoaderCircle className="size-4 animate-spin text-primary" aria-hidden="true" />
         {label}
       </div>
     </main>
@@ -74,5 +78,9 @@ export function FieldError({ children }: Readonly<{ children?: ReactNode }>) {
     return null;
   }
 
-  return <p className="text-sm text-destructive">{children}</p>;
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      {children}
+    </p>
+  );
 }

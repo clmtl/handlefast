@@ -218,11 +218,13 @@ export default defineSchema({
     platform: v.union(v.literal("manual"), v.literal("shopify")),
     status: v.union(v.literal("setup"), v.literal("active"), v.literal("disabled")),
     supportEmail: v.optional(v.string()),
+    shopifyImportDomain: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_and_slug", ["organizationId", "slug"])
+    .index("by_organizationId_and_shopifyImportDomain", ["organizationId", "shopifyImportDomain"])
     .index("by_organizationId_and_status", ["organizationId", "status"])
     .index("by_createdAt", ["createdAt"]),
 
