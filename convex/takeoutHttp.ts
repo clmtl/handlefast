@@ -17,6 +17,7 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
   if (!(await ctx.auth.getUserIdentity())) return new Response(null, { status: 401 });
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
+  const source = url.searchParams.get("source") === "gmail" ? "gmail" : "takeout";
   if (!shop || shop.length > 64 || !request.body) return new Response(null, { status: 400 });
   if (Number(request.headers.get("content-length")) > maxTakeoutMessageBytes)
     return Response.json({ result: "skipped" });
@@ -70,6 +71,7 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
       rawStorageId,
       sha256,
       rawSize: raw.size,
+      source,
       date,
       direction: outbound ? "outbound" : "inbound",
       from: identity(parsed.from),
