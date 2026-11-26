@@ -3,6 +3,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { cachedOrderContext } from "../orderContext";
 import { effectiveReplyPolicy, matchesRule } from "./automaticReplyPolicy";
 import { type ReviewWarning, replyBlockReason } from "./humanReviewPolicy";
+import { shopLocale, supportedEmailLanguage } from "./shopLanguage";
 
 export async function humanReviewContext(
   ctx: MutationCtx | QueryCtx,
@@ -78,7 +79,7 @@ export async function humanReviewContext(
     .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
     .unique();
   const policy = effectiveReplyPolicy(settings);
-  const reason =
+  const ruleReason =
     automatic && ["failed", "uncertain", "cancelled"].includes(automatic.status)
       ? ("automatic_unavailable" as const)
       : replyBlockReason(
@@ -86,8 +87,14 @@ export async function humanReviewContext(
           receipt.classification,
           matchesRule(policy.rules, receipt.classification),
         );
+  const replyLocale = await shopLocale(ctx, receipt.shopId);
+  const reason =
+    ruleReason === "automatic_rule" && !supportedEmailLanguage(replyLocale)
+      ? "automatic_unavailable"
+      : ruleReason;
   // Capture only the chosen order, never broad candidates or private delivery addresses.
   const prompt = JSON.stringify({
+    replyLocale,
     email: { subject: message?.subject?.slice(0, 500) ?? "", body: body.slice(0, 6000), previous },
     classification: receipt.classification
       ? {
@@ -119,6 +126,7 @@ export async function humanReviewContext(
     warnings,
   });
   const contextKey = JSON.stringify({
+    replyLocale,
     classification: receipt.classification ?? null,
     classificationUpdatedAt: receipt.classificationUpdatedAt ?? null,
     reason,
@@ -139,6 +147,7 @@ export async function humanReviewContext(
   return {
     prompt,
     contextKey,
+    replyLocale,
     reason,
     warnings,
     empty: !body,

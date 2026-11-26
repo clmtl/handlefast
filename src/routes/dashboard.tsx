@@ -55,6 +55,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { supportedEmailLanguage } from "../../convex/lib/shopLanguage";
 
 const sections = {
   overview: { label: "Vue d’ensemble", icon: LayoutDashboard },
@@ -367,7 +368,7 @@ function Overview({ shopId, shop }: { shopId: Id<"shops">; shop?: string }) {
       view: "replies" as const,
       label: "Réponses automatiques",
       status: reply
-        ? reply.enabled && reply.configured
+        ? reply.enabled && reply.configured && supportedEmailLanguage(commerce?.primaryLocale)
           ? "Actives"
           : reply.enabled
             ? "À configurer"

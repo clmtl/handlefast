@@ -25,7 +25,7 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
     }
   }
   if (!value) return null;
-  const { review, canManage, stale } = value,
+  const { review, canManage, stale, draftLanguageMatches } = value,
     proposal = review?.proposal;
   return (
     <section
@@ -93,8 +93,8 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
       {review && (
         <DraftEditor
           receiptId={receiptId}
-          saved={review.editedDraft ?? proposal?.draftReply ?? ""}
-          suggested={proposal?.draftReply ?? ""}
+          saved={review.editedDraft ?? (draftLanguageMatches ? (proposal?.draftReply ?? "") : "")}
+          suggested={draftLanguageMatches ? (proposal?.draftReply ?? "") : ""}
           canManage={canManage}
           edited={review.editedDraft !== undefined}
         />

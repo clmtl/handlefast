@@ -62,6 +62,12 @@ export function ShopifySettings({ shopId }: { shopId: Id<"shops"> }) {
                   ? `Dernière synchronisation le ${new Date(status.syncedAt).toLocaleString("fr-FR")}`
                   : "Première synchronisation en attente."}
             </p>
+            <p className="text-sm text-muted-foreground">
+              Langue principale ·{" "}
+              {status.primaryLocale
+                ? new Intl.DisplayNames("fr", { type: "language" }).of(status.primaryLocale)
+                : "En attente de Shopify"}
+            </p>
             {status.error && (
               <p role="status" className="text-sm text-destructive">
                 La dernière synchronisation a échoué. Une nouvelle tentative est prévue.

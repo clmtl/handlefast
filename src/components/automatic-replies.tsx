@@ -14,7 +14,7 @@ import {
   type Priority,
   priorities,
 } from "../../convex/lib/emailClassificationPolicy";
-
+import { supportedEmailLanguage } from "../../convex/lib/shopLanguage";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
@@ -33,14 +33,16 @@ const button =
 
 export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
   const settings = useQuery(api.automaticReplySettings.get, { shopId });
+  const shopify = useQuery(api.shopifyConnection.status, { shopId });
   const save = useMutation(api.automaticReplySettings.save);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ReplyRule[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  if (!settings) return <Skeleton className="h-48 w-full" />;
+  if (!settings || !shopify) return <Skeleton className="h-48 w-full" />;
   const { enabled, rules, configured, canManage } = settings;
-  const active = enabled && configured;
+  const language = supportedEmailLanguage(shopify?.primaryLocale);
+  const active = enabled && configured && Boolean(language);
   const categoriesWithRules = Object.entries(categories).filter(([category]) =>
     rules.some((rule) => rule.category === category),
   );
@@ -68,7 +70,9 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
             <div>
               <h2 className="font-semibold">Envoi automatique</h2>
               <p className="text-sm text-muted-foreground">
-                Pour les demandes simples et les informations vérifiées.
+                {language
+                  ? "Les réponses utilisent la langue principale de la boutique Shopify."
+                  : "Les envois attendent une langue Shopify prise en charge."}
               </p>
             </div>
           </div>
@@ -76,7 +80,13 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
             variant="secondary"
             className={active ? "bg-emerald-50 text-emerald-800" : undefined}
           >
-            {active ? "Actif" : enabled ? "Service indisponible" : "En pause"}
+            {active
+              ? "Actif"
+              : !enabled
+                ? "En pause"
+                : !configured
+                  ? "Service indisponible"
+                  : "Langue indisponible"}
           </Badge>
         </CardHeader>
         {canManage && (

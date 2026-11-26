@@ -16,8 +16,10 @@ import {
   NOTICE_WINDOW,
   nextDeliveryRun,
   noticeStatus,
+  storedDeliveryConfig,
   validDeliveryConfig,
 } from "./lib/deliveryPolicy";
+import { shopLocale, supportedEmailLanguage } from "./lib/shopLanguage";
 
 async function startScan(
   ctx: MutationCtx,
@@ -74,7 +76,6 @@ export const get = query({
             timezone: p.timezone,
             holidays: p.holidays,
             hour: p.hour,
-            locale: p.locale,
             mode: p.mode,
             liveFrom: p.liveFrom ?? null,
             lastSimulationAt: p.lastSimulationAt ?? null,
@@ -94,9 +95,9 @@ export const get = query({
   },
 });
 export const save = mutation({
-  args: { shopId: v.id("shops"), mode: deliveryMode, ...deliveryConfig },
+  args: { shopId: v.id("shops"), mode: deliveryMode, ...storedDeliveryConfig },
   returns: v.null(),
-  handler: async (ctx, { shopId, mode, ...config }) => {
+  handler: async (ctx, { shopId, mode, locale: _legacyLocale, ...config }) => {
     const { membership, profile, shop } = await requireShopMembership(ctx, shopId);
     assertCanManageOrganization(membership);
     config.holidays = [...config.holidays].sort();
@@ -131,6 +132,8 @@ export const save = mutation({
         !route
       )
         throw new ConvexError("DeliveryServiceUnavailable");
+      if (!supportedEmailLanguage(connection.primaryLocale))
+        throw new ConvexError("ShopLanguageUnavailable");
       if (
         !same ||
         !existing?.lastSimulationAt ||
@@ -208,10 +211,7 @@ export const list = query({
   }),
   handler: async (ctx, { shopId, history, paginationOpts }) => {
     const { membership } = await requireShopMembership(ctx, shopId);
-    const policy = await ctx.db
-      .query("deliveryPolicies")
-      .withIndex("by_shopId", (q) => q.eq("shopId", shopId))
-      .unique();
+    const language = supportedEmailLanguage(await shopLocale(ctx, shopId));
     const result = await (history
       ? ctx.db
           .query("delayNotices")
@@ -244,7 +244,7 @@ export const list = query({
         sentAt: row.sentAt ?? null,
         text:
           row.payload?.text ??
-          delayEmail(policy?.locale ?? "fr", row.orderName, shop?.name ?? "").text,
+          (language ? delayEmail(language, row.orderName, shop?.name ?? "").text : ""),
         canCancel: membership.role !== "viewer" && ["queued", "retrying"].includes(row.status),
       });
     }
@@ -282,7 +282,7 @@ export const scanPage = internalMutation({
       const id = await ensureDeliveryPromise(ctx, order),
         row = id ? await ctx.db.get(id) : null;
       if (!row || (simulation && row.status !== "none")) continue;
-      const info = await inspectDelivery(ctx, row, policy);
+      const info = await inspectDelivery(ctx, row);
       const reason =
         !simulation && (row.estimated || row.placedAt < (policy.liveFrom ?? Infinity))
           ? "historical"
@@ -310,10 +310,11 @@ export const scanPage = internalMutation({
         ["none", "cancelled"].includes(row.status) &&
         info.route &&
         info.shop &&
+        info.language &&
         order.email
       ) {
         const replyToken = row.replyToken ?? crypto.randomUUID(),
-          mail = delayEmail(policy.locale, order.name, info.shop.name);
+          mail = delayEmail(info.language, order.name, info.shop.name);
         const conversationId =
           row.conversationId && (await ctx.db.get(row.conversationId))
             ? row.conversationId
@@ -449,7 +450,7 @@ export const claimSend = internalMutation({
       await stop(ctx, row, "expired");
       return null;
     }
-    const info = await inspectDelivery(ctx, row, policy);
+    const info = await inspectDelivery(ctx, row);
     if (info.reason !== "eligible" || info.contextKey !== row.contextKey) {
       await stop(ctx, row, info.reason !== "eligible" ? info.reason : "context_changed");
       return null;

@@ -25,7 +25,7 @@ test("human assistance always requests gpt-6-luna, strict bounded output, no too
               text: JSON.stringify({
                 resumeEnFrancais: "Le client demande un remboursement.",
                 solutionEnFrancais: "Vérifier la demande et les conditions applicables.",
-                brouillonLangueClient: "Bonjour, nous allons examiner votre demande.",
+                brouillonLangueBoutique: "Bonjour, nous allons examiner votre demande.",
                 informationsManquantesEnFrancais: ["Référence de commande"],
                 confidence: 0.95,
               }),

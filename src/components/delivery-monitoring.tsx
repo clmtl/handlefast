@@ -9,6 +9,7 @@ import {
   deliveryReasons,
   noticeStatuses,
 } from "../../convex/lib/deliveryPolicy";
+import { supportedEmailLanguage } from "../../convex/lib/shopLanguage";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
@@ -30,7 +31,6 @@ const defaults: DeliveryConfig = {
   calendar: "business",
   timezone: "Europe/Paris",
   hour: 9,
-  locale: "fr",
   holidays: [],
 };
 
@@ -50,8 +50,13 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
   if (!settings || !shopify || !email) return <Skeleton className="h-48 w-full" />;
   const { config, canManage } = settings;
   const live = config?.mode === "live";
+  const language = supportedEmailLanguage(shopify.primaryLocale);
   const available =
-    settings.configured && shopify.connected && email.enabled && !email.shopDisabled;
+    settings.configured &&
+    shopify.connected &&
+    email.enabled &&
+    !email.shopDisabled &&
+    Boolean(language);
   function values(): DeliveryConfig {
     return config
       ? {
@@ -59,7 +64,6 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
           calendar: config.calendar,
           timezone: config.timezone,
           hour: config.hour,
-          locale: config.locale,
           holidays: config.holidays,
         }
       : defaults;
@@ -90,9 +94,11 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
       setFeedback(
         detail.includes("SimulateBeforeLive")
           ? "Relance une simulation avant d’activer les notifications."
-          : detail.includes("InvalidDeliveryPolicy")
-            ? "Vérifie le délai, le fuseau horaire et les dates saisies."
-            : "Action impossible. Vérifie les connexions et réessaie.",
+          : detail.includes("ShopLanguageUnavailable")
+            ? "Attends la synchronisation de la langue principale de Shopify."
+            : detail.includes("InvalidDeliveryPolicy")
+              ? "Vérifie le délai, le fuseau horaire et les dates saisies."
+              : "Action impossible. Vérifie les connexions et réessaie.",
       );
     } finally {
       setBusy(false);
@@ -137,6 +143,12 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
                   ? "Contrôle en cours…"
                   : `Prochain contrôle · ${formatDate(config.nextRunAt, config.timezone)}`}
               </span>
+              {shopify.primaryLocale && (
+                <span>
+                  Langue Shopify ·{" "}
+                  {new Intl.DisplayNames("fr", { type: "language" }).of(shopify.primaryLocale)}
+                </span>
+              )}
               {config.lastSimulationAt && (
                 <span>
                   Dernière simulation · {formatDate(config.lastSimulationAt, config.timezone)}
@@ -220,8 +232,10 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
                 >
                   active la réception email
                 </Link>
-              ) : (
+              ) : !settings.configured ? (
                 "le service email doit être disponible"
+              ) : (
+                "Shopify doit fournir une langue prise en charge"
               )}
               .
             </p>
@@ -328,20 +342,6 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
                 placeholder="Europe/Paris"
                 onChange={(event) => setForm({ ...form, timezone: event.target.value })}
               />
-            </label>
-            <label htmlFor={`${formId}-language`} className="grid gap-1.5 text-sm font-medium">
-              Langue de l’email
-              <NativeSelect
-                id={`${formId}-language`}
-                value={form.locale}
-                onChange={(event) =>
-                  setForm({ ...form, locale: event.target.value as DeliveryConfig["locale"] })
-                }
-              >
-                <NativeSelectOption value="fr">Français</NativeSelectOption>
-                <NativeSelectOption value="en">Anglais</NativeSelectOption>
-                <NativeSelectOption value="es">Espagnol</NativeSelectOption>
-              </NativeSelect>
             </label>
             {form.calendar === "business" && (
               <label
@@ -475,12 +475,14 @@ function DeliveryRows({ shopId, history }: { shopId: Id<"shops">; history: boole
                   Vérifiez votre messagerie avant de répondre pour éviter un doublon.
                 </p>
               )}
-              <details className="mt-2">
-                <summary className="cursor-pointer text-sm">
-                  {row.status === "sent" ? "Voir la notification" : "Aperçu du message"}
-                </summary>
-                <p className="mt-2 whitespace-pre-wrap break-words text-sm">{row.text}</p>
-              </details>
+              {row.text && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-sm">
+                    {row.status === "sent" ? "Voir la notification" : "Aperçu du message"}
+                  </summary>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm">{row.text}</p>
+                </details>
+              )}
               {row.canCancel && (
                 <Button
                   type="button"

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizedEmail, SHOPIFY_API_VERSION } from "./commerceModel";
+import { normalizeShopLocale } from "./shopLanguage";
 
 export const ORDER_FIELDS = `
   id name email createdAt updatedAt cancelledAt displayFinancialStatus displayFulfillmentStatus
@@ -84,6 +85,19 @@ export async function shopifyGraphql(
   if (result.errors?.length || !result.data) throw new Error("ShopifyDataAccessDenied");
   return result.data;
 }
+// Existing merchant-owned apps can read this setting with their current access token.
+export async function fetchShopLocale(domain: string, token: string) {
+  const result = z
+    .object({ shop: z.object({ primary_locale: z.string() }) })
+    .parse(
+      await providerJson(
+        `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/shop.json?fields=primary_locale`,
+        { method: "GET", headers: { "X-Shopify-Access-Token": token } },
+      ),
+    );
+  return normalizeShopLocale(result.shop.primary_locale);
+}
+
 export async function exchangeCredentials(domain: string, clientId: string, secret: string) {
   return z
     .object({

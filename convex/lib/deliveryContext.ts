@@ -3,6 +3,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { validMailbox } from "./automaticReplyPolicy";
 import { orderName, orderReferences } from "./commerceModel";
 import { DAY, type DeliveryReason, deliveryDeadline } from "./deliveryPolicy";
+import { supportedEmailLanguage } from "./shopLanguage";
 
 export async function ensureDeliveryPromise(ctx: MutationCtx, order: Doc<"shopifyOrders">) {
   const existing = await ctx.db
@@ -133,15 +134,12 @@ async function customerContact(
   return ambiguous ? "ambiguous_contact" : null;
 }
 
-export async function inspectDelivery(
-  ctx: MutationCtx | QueryCtx,
-  notice: Doc<"delayNotices">,
-  policy: Doc<"deliveryPolicies">,
-) {
+export async function inspectDelivery(ctx: MutationCtx | QueryCtx, notice: Doc<"delayNotices">) {
   const order = await ctx.db.get(notice.orderId),
     shop = await ctx.db.get(notice.shopId);
   let reason: DeliveryReason = "eligible";
   const connection = order ? await ctx.db.get(order.connectionId) : null;
+  const language = supportedEmailLanguage(connection?.primaryLocale);
   const route = await ctx.db
     .query("inboundEmailRoutes")
     .withIndex("by_shopId_and_status", (q) => q.eq("shopId", notice.shopId).eq("status", "active"))
@@ -215,7 +213,10 @@ export async function inspectDelivery(
     )
       reason = "delivered";
     else if (Date.now() <= notice.deadlineAt) reason = "not_due";
-    else reason = (await customerContact(ctx, order)) ?? "eligible";
+    else
+      reason =
+        (await customerContact(ctx, order)) ??
+        (language ? "eligible" : "shop_language_unavailable");
   }
   const contextKey = JSON.stringify({
     order: order
@@ -234,8 +235,8 @@ export async function inspectDelivery(
     shipments: current.map((s) => [s._id, s.status, s.eventAt ?? null, s.error ?? null]),
     route: route?._id ?? null,
     deadline: notice.deadlineAt,
-    locale: policy.locale,
+    language,
     reason,
   });
-  return { reason, contextKey, order, shop, route };
+  return { reason, contextKey, order, shop, route, language };
 }

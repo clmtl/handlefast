@@ -1,6 +1,6 @@
 # Proactive delivery notifications (feature 8, V1)
 
-The dashboard's **Surveillance des retards** checks cached orders against a shop's promised maximum delivery timeframe, including preparation. Configuration starts in **simulation**, without automatic initialization of a merchant's actual delivery promise. Owners/admins choose 1–90 calendar/business days, an IANA timezone, a daily local hour, a notification language (French/English/Spanish), and up to 80 explicit closed/holiday dates. Business days are Monday–Friday; no national holiday calendar is silently assumed.
+The dashboard's **Surveillance des retards** checks cached orders against a shop's promised maximum delivery timeframe, including preparation. Configuration starts in **simulation**, without automatic initialization of a merchant's actual delivery promise. Owners/admins choose 1–90 calendar/business days, an IANA timezone, a daily local hour and up to 80 explicit closed/holiday dates. Notifications use the primary language synchronized from Shopify. French, English and Spanish templates cover regional variants. An unknown or unsupported language blocks sending. Business days are Monday–Friday; no national holiday calendar is silently assumed.
 
 ## Deadlines, simulation and activation
 

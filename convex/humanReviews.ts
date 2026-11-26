@@ -132,6 +132,7 @@ export const get = query({
       review: v.union(humanReviewValidator, v.null()),
       canManage: v.boolean(),
       stale: v.boolean(),
+      draftLanguageMatches: v.boolean(),
       reason: blockReason,
     }),
   ),
@@ -153,6 +154,9 @@ export const get = query({
         receipt.humanReview?.proposal && receipt.humanReview.contextKey !== context.contextKey,
       ),
       reason: context.reason,
+      draftLanguageMatches: Boolean(
+        context.replyLocale && receipt.humanReview?.draftLocale === context.replyLocale,
+      ),
     };
   },
 });
@@ -298,12 +302,13 @@ async function saveProposal(
   receipt: Doc<"emailReceipts">,
   proposal: InferProposal,
   contextKey: string,
+  draftLocale?: string,
 ) {
   const review = receipt.humanReview;
   if (!review) return;
   const { job: _, ...rest } = review;
   await ctx.db.patch(receipt._id, {
-    humanReview: { ...rest, proposal, contextKey, generatedAt: Date.now() },
+    humanReview: { ...rest, proposal, contextKey, draftLocale, generatedAt: Date.now() },
   });
 }
 type InferProposal = NonNullable<NonNullable<Doc<"emailReceipts">["humanReview"]>["proposal"]>;
@@ -324,15 +329,17 @@ export const complete = internalMutation({
       return null;
     }
     const context = await humanReviewContext(ctx, receipt);
+    const currentContext = context.contextKey === contextKey;
     await saveProposal(
       ctx,
       receipt,
-      context.contextKey === contextKey
-        ? proposal
+      currentContext
+        ? { ...proposal, draftReply: context.replyLocale ? proposal.draftReply : "" }
         : reviewFallback(
             "Le contexte a changé pendant la préparation. Régénérer la proposition avant de l’utiliser.",
           ),
       contextKey,
+      currentContext ? (context.replyLocale ?? undefined) : undefined,
     );
     return null;
   },

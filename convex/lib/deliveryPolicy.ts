@@ -10,12 +10,13 @@ export const promiseFields = {
   timezone: v.string(),
   holidays: v.array(v.string()),
 };
-export const deliveryConfig = { ...promiseFields, hour: v.number(), locale: deliveryLocale };
+export const deliveryConfig = { ...promiseFields, hour: v.number() };
+export const storedDeliveryConfig = { ...deliveryConfig, locale: v.optional(deliveryLocale) };
 export type DeliveryConfig = Infer<typeof configValidator>;
 export const configValidator = v.object(deliveryConfig);
 export const policyFields = {
   shopId: v.id("shops"),
-  ...deliveryConfig,
+  ...storedDeliveryConfig,
   mode: deliveryMode,
   revision: v.number(),
   versionId: v.id("deliveryPolicyVersions"),
@@ -29,7 +30,11 @@ export const policyFields = {
   lastSimulationAt: v.optional(v.number()),
   simulatedVersionId: v.optional(v.id("deliveryPolicyVersions")),
 };
-export const versionFields = { shopId: v.id("shops"), ...deliveryConfig, effectiveAt: v.number() };
+export const versionFields = {
+  shopId: v.id("shops"),
+  ...storedDeliveryConfig,
+  effectiveAt: v.number(),
+};
 export const deliveryReasons = {
   not_due: "Délai non dépassé",
   eligible: "Notification possible",
@@ -44,6 +49,7 @@ export const deliveryReasons = {
   disconnected: "Connexion Shopify indisponible",
   reception: "Réception SAV indisponible",
   recipient: "Adresse du client absente ou invalide",
+  shop_language_unavailable: "Langue de la boutique indisponible pour l’envoi",
   contacted: "Client déjà en contact pour cette commande",
   ambiguous_contact: "Contact client sans commande identifiable",
   pending_email: "Email entrant encore à traiter",

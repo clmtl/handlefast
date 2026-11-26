@@ -21,6 +21,7 @@ import {
 } from "./lib/automaticReplyPolicy";
 import { orderReferences } from "./lib/commerceModel";
 import { humanReviewContext } from "./lib/humanReviewContext";
+import { supportedEmailLanguage } from "./lib/shopLanguage";
 import { cachedOrderContext } from "./orderContext";
 
 async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision: number) {
@@ -101,6 +102,8 @@ async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision
     .first();
   if (latest?._id !== message._id) return { blocked: "newer_message" } as const;
   const context = await humanReviewContext(ctx, receipt);
+  const language = supportedEmailLanguage(context.replyLocale);
+  if (!language) return { blocked: "shop_language_unavailable" } as const;
   if (context.orderSyncedAt !== null && context.orderSyncedAt < Date.now() - 24 * 3600_000)
     return { blocked: "stale_order" } as const;
   if (
@@ -116,7 +119,7 @@ async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision
     )
   )
     return { blocked: "incomplete_context" } as const;
-  return { blocked: null, shop, route, settings, message, classification, context };
+  return { blocked: null, shop, route, settings, message, classification, context, language };
 }
 
 export async function routeSupportReply(
@@ -333,7 +336,7 @@ export const prepared = internalMutation({
       await stop(ctx, row, "tracking_unavailable");
       return null;
     }
-    const text = renderAutomaticReply(plan, info.classification.category, {
+    const text = renderAutomaticReply(plan, info.language, info.classification.category, {
       orderName: order?.name,
       statuses: cached?.shipments.filter((s) => s.active).map((s) => s.status) ?? [],
       preparing,

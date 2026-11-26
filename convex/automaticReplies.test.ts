@@ -90,6 +90,7 @@ async function fixture(
     replyTo?: string;
     old?: boolean;
     newlyReserved?: boolean;
+    locale?: string | null;
     classification?: Classification;
     text?: string;
   } = {},
@@ -104,8 +105,26 @@ async function fixture(
       enabled: true,
       rules: [{ category: "order_status", priority: "normal" }],
     });
-  const now = Date.now(),
-    receivedAt = options.old ? now - 1000 : now;
+  const now = Date.now();
+  const connectionId = await t.run((ctx) =>
+    ctx.db.insert("shopifyConnections", {
+      shopId: shop.shopId,
+      organizationId: shop.organizationId,
+      domain: "fixture.myshopify.com",
+      shopifyShopId: "gid://shopify/Shop/1",
+      clientId: "test",
+      secret: "never-decrypted",
+      token: "never-decrypted",
+      tokenExpiresAt: now + 86400000,
+      scopes: ["read_orders"],
+      primaryLocale: options.locale === null ? undefined : (options.locale ?? "fr"),
+      generation: "g1",
+      status: "active",
+      nextSyncAt: now + 86400000,
+      createdAt: now,
+    }),
+  );
+  const receivedAt = options.old ? now - 1000 : now;
   const envelopeFrom = "client@example.com";
   const envelopeTo = route.address;
   const sha256 = `${"A".repeat(43)}=`;
@@ -171,7 +190,7 @@ async function fixture(
     token: receipt.classificationJob.token,
     classification: options.classification ?? classification,
   });
-  return { t, shop, route, receiptId };
+  return { t, shop, route, receiptId, connectionId };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 async function row(f: Fixture) {
@@ -309,35 +328,35 @@ test("renders only reviewed bounded templates and safe intent/category combinati
     shopName: "Shop",
   };
   expect(
-    renderAutomaticReply({ ...plan, intent: "tracking", language: "en" }, "order_status", context),
+    renderAutomaticReply({ ...plan, intent: "tracking" }, "en", "order_status", context),
   ).toContain("In transit");
   expect(
-    renderAutomaticReply({ ...plan, intent: "tracking" }, "order_status", {
+    renderAutomaticReply({ ...plan, intent: "tracking" }, "fr", "order_status", {
       ...context,
       statuses: ["Unknown"],
     }),
   ).toBeNull();
-  expect(renderAutomaticReply({ ...plan, intent: "tracking" }, "refund", context)).toBeNull();
+  expect(renderAutomaticReply({ ...plan, intent: "tracking" }, "fr", "refund", context)).toBeNull();
   for (const p of [
     { ...plan, intent: "handoff" as const },
     { ...plan, confidence: 0.94 },
     { ...plan, confidence: NaN },
-    { ...plan, language: "other" as const },
   ])
     expect(
-      renderAutomaticReply(p, "order_status", {
+      renderAutomaticReply(p, "fr", "order_status", {
         ...context,
         missingOrder: true,
         hasReference: false,
       }),
     ).toBeNull();
-  expect(renderAutomaticReply(plan, "order_status", { ...context, missingOrder: true })).toBeNull();
+  expect(
+    renderAutomaticReply(plan, "fr", "order_status", { ...context, missingOrder: true }),
+  ).toBeNull();
 });
 
-test("unsupported, uncertain or action-required plans hand off without sending", async () => {
+test("uncertain or action-required plans hand off without sending", async () => {
   for (const proposal of [
     { ...plan, intent: "handoff" as const },
-    { ...plan, language: "other" as const },
     { ...plan, confidence: 0.9 },
     { ...plan, intent: "tracking" as const },
   ]) {
@@ -346,6 +365,22 @@ test("unsupported, uncertain or action-required plans hand off without sending",
     expect(r.status).toBe("cancelled");
     expect((await receipt(f))?.humanReview?.status).toBe("open");
   }
+});
+
+test("replies use the shop locale, and a change invalidates an unsent reply", async () => {
+  const f = await fixture({ locale: "en-GB" });
+  const reply = await ready(f, { ...plan, language: "other" });
+  expect(reply.payload?.text).toContain("Hello");
+  expect(reply.payload?.text).not.toContain("Bonjour");
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "es" }));
+  expect(await f.t.mutation(internal.automaticReplies.claimSend, { id: reply._id })).toBeNull();
+  expect(await row(f)).toMatchObject({ status: "cancelled" });
+});
+
+test.each([null, "de"])("hands off when the shop language %s has no template", async (locale) => {
+  const f = await fixture({ locale });
+  expect(await row(f)).toBeNull();
+  expect((await receipt(f))?.humanReview).toMatchObject({ status: "open" });
 });
 
 test("freezes recipient, thread headers, subject and response; dispatch is claimed only once", async () => {
@@ -549,21 +584,7 @@ test("retention removes the outbox and pending sends become no-ops", async () =>
 async function seedOrder(f: Fixture, email = "client@example.com") {
   const now = Date.now();
   return f.t.run(async (ctx) => {
-    const connectionId = await ctx.db.insert("shopifyConnections", {
-      shopId: f.shop.shopId,
-      organizationId: f.shop.organizationId,
-      domain: "fixture.myshopify.com",
-      shopifyShopId: "gid://shopify/Shop/1",
-      clientId: "test",
-      secret: "never-decrypted",
-      token: "never-decrypted",
-      tokenExpiresAt: now + 86400000,
-      scopes: ["read_orders"],
-      generation: "g1",
-      status: "active",
-      nextSyncAt: now + 86400000,
-      createdAt: now,
-    });
+    const connectionId = f.connectionId;
     const orderId = await ctx.db.insert("shopifyOrders", {
       shopId: f.shop.shopId,
       organizationId: f.shop.organizationId,

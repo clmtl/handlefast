@@ -22,7 +22,6 @@ const config = {
   calendar: "calendar" as const,
   timezone: "Europe/Paris",
   hour: 9,
-  locale: "fr" as const,
   holidays: [] as string[],
 };
 beforeEach(() => {
@@ -104,6 +103,7 @@ async function fixture(live = false) {
       token: "never-decrypt",
       tokenExpiresAt: Date.now() + 365 * DAY,
       scopes: ["read_orders"],
+      primaryLocale: "fr",
       generation: "g1",
       status: "active",
       nextSyncAt: Date.now() + 365 * DAY,
@@ -332,6 +332,44 @@ test("default configuration is absent; simulation is the first configured mode a
     revision: previous?.revision,
     nextRunAt: previous?.nextRunAt,
   });
+});
+
+test("delay previews and outgoing mail follow the current shop language", async () => {
+  const f = await fixture(true);
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "es-MX" }));
+  await scan(f);
+  const list = await f.shop.client.query(api.deliveryMonitoring.list, {
+    shopId: f.shop.shopId,
+    history: false,
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  expect(list.page[0].text).toContain("Hola");
+
+  await scan(f, false);
+  const queued = await notice(f);
+  expect(queued.payload?.subject).toContain("Información sobre tu pedido");
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "en" }));
+  expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
+  expect(await notice(f)).toMatchObject({ status: "cancelled", reason: "context_changed" });
+  await scan(f, false);
+  const current = await notice(f);
+  expect(current.payload?.subject).toContain("An update on your order");
+  expect(current.status).toBe("queued");
+});
+
+test("delay notifications wait for a supported shop language", async () => {
+  const f = await fixture();
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "de-DE" }));
+  await scan(f);
+  expect(await notice(f)).toMatchObject({ status: "none", reason: "shop_language_unavailable" });
+  await expect(
+    f.shop.client.mutation(api.deliveryMonitoring.save, {
+      shopId: f.shop.shopId,
+      mode: "live",
+      ...config,
+      locale: "fr",
+    }),
+  ).rejects.toThrow("ShopLanguageUnavailable");
 });
 
 test("manual simulation leaves a due live scan available without sending", async () => {

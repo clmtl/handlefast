@@ -17,6 +17,7 @@ export const connectionFields = {
   syncStartedAt: v.optional(v.number()),
   syncLease: v.optional(v.string()),
   syncedAt: v.optional(v.number()),
+  primaryLocale: v.optional(v.string()),
   error: v.optional(v.string()),
   createdAt: v.number(),
   lookupAt: v.optional(v.number()),
