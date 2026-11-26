@@ -43,8 +43,8 @@ export async function manualReplyTarget(
     return null;
   const latest = await ctx.db
     .query("supportMessages")
-    .withIndex("by_conversationId_and_direction_and_receivedAt", (q) =>
-      q.eq("conversationId", message.conversationId).eq("direction", "inbound"),
+    .withIndex("by_conversationId_and_receivedAt", (q) =>
+      q.eq("conversationId", message.conversationId),
     )
     .order("desc")
     .first();

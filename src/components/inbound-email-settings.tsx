@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { EmailReaderDialog } from "./email-reader-dialog";
+import { TakeoutImport } from "./takeout-import";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -213,6 +214,9 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
           )}
         </CardContent>
       </Card>
+      {canManage && enabled && savedEmail && (
+        <TakeoutImport key={shopId} shopId={shopId} address={savedEmail} />
+      )}
       <Card className="gap-0 pb-0">
         <CardHeader className="pb-4">
           <CardTitle className="text-base">Journal de réception</CardTitle>

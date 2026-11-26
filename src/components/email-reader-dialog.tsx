@@ -1,4 +1,4 @@
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import PostalMime, { type Email } from "postal-mime";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -16,6 +16,13 @@ export function EmailReaderDialog({
   selected: Id<"emailReceipts"> | null;
   close: () => void;
 }) {
+  const [openedMessage, setOpenedMessage] = useState<{
+    conversation: Id<"emailReceipts">;
+    message: Id<"emailReceipts">;
+  } | null>(null);
+  const thread = useQuery(api.takeoutImport.thread, selected ? { receiptId: selected } : "skip");
+  const activeMessage =
+    openedMessage && openedMessage.conversation === selected ? openedMessage.message : selected;
   return (
     <Dialog
       open={selected !== null}
@@ -29,7 +36,37 @@ export function EmailReaderDialog({
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">Lire l’email</DialogTitle>
-        {selected && <EmailReader key={selected} receiptId={selected} close={close} />}
+        {thread && thread.length > 1 && (
+          <nav
+            aria-label="Messages de la conversation"
+            className="flex flex-wrap gap-2 border-b p-3"
+          >
+            {thread.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={button}
+                aria-pressed={item.id === activeMessage}
+                onClick={() =>
+                  selected && setOpenedMessage({ conversation: selected, message: item.id })
+                }
+              >
+                {item.direction === "inbound" ? "Reçu" : "Envoyé"} ·{" "}
+                {new Date(item.date).toLocaleString("fr-FR")}
+              </button>
+            ))}
+          </nav>
+        )}
+        {activeMessage && (
+          <EmailReader
+            key={activeMessage}
+            receiptId={activeMessage}
+            close={() => {
+              setOpenedMessage(null);
+              close();
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

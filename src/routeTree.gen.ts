@@ -14,6 +14,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiTakeoutRouteImport } from './routes/api/takeout'
 import { Route as AuthShopifyCallbackRouteImport } from './routes/auth/shopify/callback'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
@@ -42,6 +43,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTakeoutRoute = ApiTakeoutRouteImport.update({
+  id: '/api/takeout',
+  path: '/api/takeout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthShopifyCallbackRoute = AuthShopifyCallbackRouteImport.update({
   id: '/auth/shopify/callback',
   path: '/auth/shopify/callback',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/api/takeout': typeof ApiTakeoutRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/auth/shopify/callback': typeof AuthShopifyCallbackRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/api/takeout': typeof ApiTakeoutRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/auth/shopify/callback': typeof AuthShopifyCallbackRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/api/takeout': typeof ApiTakeoutRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/auth/shopify/callback': typeof AuthShopifyCallbackRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/sign-in'
     | '/sign-up'
+    | '/api/takeout'
     | '/api/auth/$'
     | '/auth/shopify/callback'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/sign-in'
     | '/sign-up'
+    | '/api/takeout'
     | '/api/auth/$'
     | '/auth/shopify/callback'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/sign-in'
     | '/sign-up'
+    | '/api/takeout'
     | '/api/auth/$'
     | '/auth/shopify/callback'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
+  ApiTakeoutRoute: typeof ApiTakeoutRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   AuthShopifyCallbackRoute: typeof AuthShopifyCallbackRoute
 }
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/takeout': {
+      id: '/api/takeout'
+      path: '/api/takeout'
+      fullPath: '/api/takeout'
+      preLoaderRoute: typeof ApiTakeoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/shopify/callback': {
       id: '/auth/shopify/callback'
       path: '/auth/shopify/callback'
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
+  ApiTakeoutRoute: ApiTakeoutRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   AuthShopifyCallbackRoute: AuthShopifyCallbackRoute,
 }

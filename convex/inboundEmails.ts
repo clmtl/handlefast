@@ -393,14 +393,11 @@ async function getConversationIdByReferences(
       .take(1);
     const referencedMessage = referencedMessages[0];
 
-    if (
-      referencedMessage?.shopId === shopId &&
-      referencedMessage.from.address === customerEmail &&
-      (referencedMessage.expiresAt ?? 0) > Date.now() &&
-      referencedMessage.conversationId
-    ) {
-      return referencedMessage.conversationId;
-    }
+    if (!referencedMessage?.conversationId || (referencedMessage.expiresAt ?? 0) <= Date.now())
+      continue;
+    const conversation = await ctx.db.get(referencedMessage.conversationId);
+    if (conversation?.shopId === shopId && conversation.customerEmail === customerEmail)
+      return conversation._id;
   }
 
   return null;
