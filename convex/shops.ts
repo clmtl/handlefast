@@ -17,7 +17,9 @@ export const listForOrganization = query({
 
     return await ctx.db
       .query("shops")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", args.organizationId))
+      .withIndex("by_organizationId_and_shopifyImportDomain", (q) =>
+        q.eq("organizationId", args.organizationId).eq("shopifyImportDomain", undefined),
+      )
       .take(100);
   },
 });
@@ -115,7 +117,9 @@ export const add = mutation({
     if (!cleaned || cleaned.length > 100) throw new ConvexError("InvalidShopName");
     const shops = await ctx.db
       .query("shops")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+      .withIndex("by_organizationId_and_shopifyImportDomain", (q) =>
+        q.eq("organizationId", organizationId).eq("shopifyImportDomain", undefined),
+      )
       .take(20);
     if (shops.length >= 20) throw new ConvexError("ShopLimitReached");
     return (await createShop(ctx, organizationId, cleaned)).shopId;

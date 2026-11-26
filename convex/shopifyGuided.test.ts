@@ -16,7 +16,7 @@ function backend() {
   betterAuthTest.register(t);
   return t;
 }
-async function workspace(t: ReturnType<typeof backend>, seed: string) {
+async function authenticatedClient(t: ReturnType<typeof backend>, seed: string) {
   const now = Date.now();
   const user = (await t.mutation(components.betterAuth.adapter.create, {
     input: {
@@ -48,7 +48,10 @@ async function workspace(t: ReturnType<typeof backend>, seed: string) {
     tokenIdentifier: `https://test.convex.site|${user._id}`,
     sessionId: session._id,
   } as Partial<UserIdentity>;
-  const client = t.withIdentity(identity);
+  return t.withIdentity(identity);
+}
+async function workspace(t: ReturnType<typeof backend>, seed: string) {
+  const client = await authenticatedClient(t, seed);
   const result = await client.mutation(api.onboarding.bootstrap, {
     organizationName: seed,
     shopName: seed,
@@ -183,7 +186,13 @@ function provider(
       return json({ access_token: "private-order-token", scope: "read_orders" });
     if (body.query?.includes("SupportShop"))
       return json({
-        data: { shop: { id: "gid://shopify/Shop/100", myshopifyDomain: "merchant.myshopify.com" } },
+        data: {
+          shop: {
+            id: "gid://shopify/Shop/100",
+            name: "Boutique du Marchand",
+            myshopifyDomain: "merchant.myshopify.com",
+          },
+        },
       });
     if (body.query?.includes("SupportOrders"))
       return json({
@@ -316,6 +325,51 @@ describe("browser-only Shopify installation", () => {
       "ShopifySessionExpired",
     );
   });
+  test("creates an empty workspace and only exposes the Shopify shop after installation", async () => {
+    const t = backend();
+    const client = await authenticatedClient(t, "first-import");
+    const { organizationId, shopId } = await client.mutation(api.onboarding.bootstrap, {});
+    expect(shopId).toBeUndefined();
+    expect(await client.mutation(api.onboarding.bootstrap, {})).toMatchObject({
+      organizationId,
+      created: false,
+    });
+    expect(await client.query(api.viewer.me)).toMatchObject({
+      organizations: [{ _id: organizationId }],
+      shops: [],
+      inboundEmailRoutes: [],
+      shopSettings: [],
+    });
+    provider();
+    const sessionId = await client.action(api.shopifyGuidedActions.start, {
+      organizationId,
+      domain: "https://admin.shopify.com/store/merchant",
+    });
+    const repeated = await client.action(api.shopifyGuidedActions.start, {
+      organizationId,
+      domain: "merchant.myshopify.com",
+    });
+    expect(repeated).toBe(sessionId);
+    expect(await client.query(api.viewer.me)).toMatchObject({
+      shops: [],
+      inboundEmailRoutes: [],
+      shopSettings: [],
+    });
+    expect(await client.query(api.shops.listForOrganization, { organizationId })).toEqual([]);
+    vi.advanceTimersByTime(5001);
+    await client.action(api.shopifyGuidedActions.poll, { sessionId });
+    await client.action(api.shopifyGuidedActions.provision, { sessionId });
+    const ready = await client.query(api.shopifyGuided.get, { sessionId });
+    const url = installationRequest(ready?.authorizationUrl);
+    const query = await callbackQuery(url.searchParams.get("state") ?? "");
+    const imported = await client.action(api.shopifyGuidedActions.callback, { query });
+    expect(await client.query(api.viewer.me)).toMatchObject({
+      shops: [{ _id: imported, name: "Boutique du Marchand", platform: "shopify" }],
+      shopSettings: [{ shopId: imported }],
+      inboundEmailRoutes: [{ shopId: imported }],
+    });
+  });
+
   test("does not disclose device or management credentials to the browser", async () => {
     const t = backend(),
       w = await workspace(t, "redaction");

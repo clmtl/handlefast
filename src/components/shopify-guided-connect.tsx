@@ -2,15 +2,20 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 const button =
   "rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
 export function ShopifyGuidedConnect({
   shopId,
-  disabled,
-}: {
-  shopId: Id<"shops">;
-  disabled: boolean;
+  organizationId,
+  disabled = false,
+}: (
+  | { shopId: Id<"shops">; organizationId?: never }
+  | { organizationId: Id<"organizations">; shopId?: never }
+) & {
+  disabled?: boolean;
 }) {
   const start = useAction(api.shopifyGuidedActions.start),
     poll = useAction(api.shopifyGuidedActions.poll),
@@ -25,12 +30,19 @@ export function ShopifyGuidedConnect({
   const popup = useRef<Window | null>(null),
     submitting = useRef(false),
     provisioned = useRef<string | null>(null);
-  const storageKey = `handlefast:shopify-guided:${shopId}`;
+  const storageKey = `handlefast:shopify-guided:${shopId ?? organizationId}`;
   useEffect(() => {
     const saved = sessionStorage.getItem(storageKey);
     if (saved && /^[a-z0-9]{25,64}$/.test(saved))
       setSessionId(saved as Id<"shopifyGuidedSessions">);
   }, [storageKey]);
+  useEffect(() => {
+    if (session?.status === "connected") {
+      sessionStorage.removeItem(storageKey);
+      setSessionId(null);
+      provisioned.current = null;
+    }
+  }, [session?.status, storageKey]);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -93,7 +105,7 @@ export function ShopifyGuidedConnect({
     popup.current = window.open("about:blank", "_blank");
     if (popup.current) popup.current.opener = null;
     try {
-      const id = await start({ shopId, domain });
+      const id = await start(shopId ? { shopId, domain } : { organizationId, domain });
       sessionStorage.setItem(storageKey, id);
       setSessionId(id);
     } catch {
@@ -125,21 +137,22 @@ export function ShopifyGuidedConnect({
       ? guidedError(session.errorCode)
       : error;
   return (
-    <div className="mt-4">
+    <div className="space-y-3">
       {!sessionId ? (
         <form onSubmit={begin} className="space-y-3">
           <p className="max-w-3xl text-sm text-muted-foreground">
-            Renseignez le lien de votre boutique. Autorisez la connexion sur Shopify, puis revenez
-            ici pour terminer l’installation. Votre boutique sera rattachée automatiquement à cette
-            organisation HandleFast.
+            Colle le lien de ta boutique, puis autorise la connexion dans Shopify.
           </p>
-          <label className="block text-sm font-medium" htmlFor={`shopify-domain-${shopId}`}>
+          <label
+            className="block text-sm font-medium"
+            htmlFor={`shopify-domain-${shopId ?? organizationId}`}
+          >
             Lien de votre boutique Shopify
           </label>
           <div className="flex flex-wrap gap-2">
-            <input
-              id={`shopify-domain-${shopId}`}
-              className="min-w-64 flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+            <Input
+              id={`shopify-domain-${shopId ?? organizationId}`}
+              className="h-10 min-w-0 flex-1 basis-56"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="https://admin.shopify.com/store/ma-boutique"
@@ -148,18 +161,10 @@ export function ShopifyGuidedConnect({
               autoCapitalize="none"
               autoCorrect="off"
             />
-            <button
-              className={`${button} bg-primary text-primary-foreground hover:bg-primary/90`}
-              type="submit"
-              disabled={busy || disabled}
-            >
+            <Button className="h-10" type="submit" disabled={busy || disabled}>
               {busy ? "Ouverture de Shopify…" : "Connecter ma boutique"}
-            </button>
+            </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Utilisez le lien de votre interface Shopify ou l’adresse de la boutique en
-            .myshopify.com.
-          </p>
         </form>
       ) : session === undefined ? (
         <p role="status">Préparation de la connexion…</p>
