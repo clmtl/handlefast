@@ -231,7 +231,7 @@ function DraftEditor({
           <DialogHeader>
             <DialogTitle>Confirmer l’envoi</DialogTitle>
             <DialogDescription>
-              L’email partira depuis l’adresse HandleFast de cette boutique.
+              L’email partira depuis l’adresse SAV autorisée pour cette boutique.
             </DialogDescription>
           </DialogHeader>
           {approval && (

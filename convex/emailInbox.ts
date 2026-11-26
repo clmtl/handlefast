@@ -1,14 +1,23 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import { action, internalQuery, mutation, query } from "./_generated/server";
+import { action, env, internalQuery, mutation, query } from "./_generated/server";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { receiptDoc, receiptStatus } from "./lib/emailReceiptValidators";
+import { verifiedShopSender } from "./lib/shopSender";
+
+function normalizeSupportEmail(supportEmail: string) {
+  const email = supportEmail.trim().toLowerCase();
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new ConvexError("InvalidSupportEmail");
+  return email;
+}
 
 export const connection = query({
   args: { shopId: v.id("shops") },
   returns: v.object({
     address: v.union(v.string(), v.null()),
     supportEmail: v.string(),
+    sendingAddress: v.optional(v.union(v.string(), v.null())),
     enabled: v.boolean(),
     shopDisabled: v.boolean(),
     verified: v.boolean(),
@@ -34,6 +43,7 @@ export const connection = query({
     return {
       address: route?.address ?? null,
       supportEmail: shop.supportEmail ?? "",
+      sendingAddress: env.RESEND_API_KEY ? verifiedShopSender(shop) : null,
       enabled: route?.status === "active" && shop.status !== "disabled",
       shopDisabled: shop.status === "disabled",
       verified: Boolean(
@@ -56,9 +66,7 @@ export const beginTest = mutation({
   handler: async (ctx, { shopId, supportEmail }) => {
     const { shop, membership } = await requireShopMembership(ctx, shopId);
     assertCanManageOrganization(membership);
-    const email = supportEmail.trim().toLowerCase();
-    if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      throw new ConvexError("InvalidSupportEmail");
+    const email = normalizeSupportEmail(supportEmail);
     const route = await ctx.db
       .query("inboundEmailRoutes")
       .withIndex("by_shopId_and_status", (q) => q.eq("shopId", shopId).eq("status", "active"))
@@ -76,6 +84,28 @@ export const beginTest = mutation({
       expiresAt: now + 30 * 60 * 1000,
     });
     return `HandleFast test ${id}`;
+  },
+});
+
+export const saveSupportAddress = mutation({
+  args: { shopId: v.id("shops"), supportEmail: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { shopId, supportEmail }) => {
+    const { shop, membership } = await requireShopMembership(ctx, shopId);
+    assertCanManageOrganization(membership);
+    const email = normalizeSupportEmail(supportEmail);
+    const route = await ctx.db
+      .query("inboundEmailRoutes")
+      .withIndex("by_shopId", (q) => q.eq("shopId", shopId))
+      .order("desc")
+      .first();
+    if (!route || shop.status === "disabled") throw new ConvexError("ReceptionDisabled");
+    if (email === route.address) throw new ConvexError("UseYourShopSupportAddress");
+    if (email !== shop.supportEmail) {
+      await ctx.db.patch(shopId, { supportEmail: email, updatedAt: Date.now() });
+      await ctx.db.patch(route._id, { verifiedAt: undefined, verifiedSupportEmail: undefined });
+    }
+    return null;
   },
 });
 

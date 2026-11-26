@@ -21,6 +21,7 @@ import {
 } from "./lib/deliveryPolicy";
 import { replyAlias } from "./lib/inboundEmailRoutes";
 import { shopLocale, supportedEmailLanguage } from "./lib/shopLanguage";
+import { verifiedShopSender } from "./lib/shopSender";
 
 async function startScan(
   ctx: MutationCtx,
@@ -65,7 +66,7 @@ export const get = query({
     approvalRequired: v.boolean(),
   }),
   handler: async (ctx, { shopId }) => {
-    const { membership } = await requireShopMembership(ctx, shopId);
+    const { membership, shop } = await requireShopMembership(ctx, shopId);
     const p = await ctx.db
       .query("deliveryPolicies")
       .withIndex("by_shopId", (q) => q.eq("shopId", shopId))
@@ -93,7 +94,7 @@ export const get = query({
         : null,
       canManage: ["owner", "admin"].includes(membership.role),
       approvalRequired: env.REQUIRE_EMAIL_APPROVAL === "true",
-      configured: Boolean(env.RESEND_API_KEY),
+      configured: Boolean(env.RESEND_API_KEY && verifiedShopSender(shop)),
     };
   },
 });
@@ -130,6 +131,7 @@ export const save = mutation({
         .first();
       if (
         !env.RESEND_API_KEY ||
+        !verifiedShopSender(shop) ||
         shop.status === "disabled" ||
         connection?.status !== "active" ||
         !route
@@ -236,6 +238,7 @@ export const list = query({
       .paginate({ ...paginationOpts, numItems: Math.min(25, paginationOpts.numItems) });
     const page = [];
     const shop = await ctx.db.get(shopId);
+    const canSend = Boolean(env.RESEND_API_KEY && verifiedShopSender(shop));
     for (const row of result.page) {
       if (row.expiresAt <= Date.now()) continue;
       page.push({
@@ -254,6 +257,7 @@ export const list = query({
           (row.status !== "cancelled" || row.attempts > 0 ? row.payload?.text : undefined) ??
           (language ? delayEmail(language, row.orderName, shop?.name ?? "").text : ""),
         canApprove:
+          canSend &&
           env.REQUIRE_EMAIL_APPROVAL === "true" &&
           membership.role === "owner" &&
           policy?.mode === "live" &&
@@ -302,6 +306,7 @@ export const scanPage = internalMutation({
         row = id ? await ctx.db.get(id) : null;
       if (!row || (simulation && row.status !== "none")) continue;
       const info = await inspectDelivery(ctx, row);
+      const from = verifiedShopSender(info.shop ?? null);
       const reason =
         !simulation && (row.estimated || row.placedAt < (policy.liveFrom ?? Infinity))
           ? "historical"
@@ -323,6 +328,7 @@ export const scanPage = internalMutation({
       });
       if (
         !simulation &&
+        env.RESEND_API_KEY &&
         env.REQUIRE_EMAIL_APPROVAL !== "true" &&
         reason === "eligible" &&
         !row.cancelledBy &&
@@ -331,7 +337,8 @@ export const scanPage = internalMutation({
         info.route &&
         info.shop &&
         info.language &&
-        order.email
+        order.email &&
+        from
       ) {
         await queueNotice(
           ctx,
@@ -342,6 +349,7 @@ export const scanPage = internalMutation({
           info.shop,
           info.language,
           info.contextKey,
+          from,
         );
       }
     }
@@ -410,6 +418,7 @@ async function queueNotice(
   shop: Doc<"shops">,
   language: NonNullable<ReturnType<typeof supportedEmailLanguage>>,
   contextKey: string,
+  from: string,
   approvedBy?: Id<"profiles">,
 ) {
   const email = order.email;
@@ -433,7 +442,7 @@ async function queueNotice(
           updatedAt: Date.now(),
         });
   const payload = {
-    from: `HandleFast <${route.address}>`,
+    from,
     to: [email],
     reply_to: replyAlias(route, "delay", replyToken),
     subject: mail.subject,
@@ -484,11 +493,13 @@ export const approve = mutation({
     )
       throw new ConvexError("NotificationUnavailable");
     const info = await inspectDelivery(ctx, row);
+    const from = verifiedShopSender(info.shop ?? null);
     if (
       info.reason !== "eligible" ||
       !info.order ||
       !info.route ||
       !info.shop ||
+      !from ||
       !info.language ||
       info.order.email !== to ||
       delayEmail(info.language, info.order.name, info.shop.name).text !== text
@@ -503,6 +514,7 @@ export const approve = mutation({
       info.shop,
       info.language,
       info.contextKey,
+      from,
       profile._id,
     );
     return null;
@@ -549,7 +561,11 @@ export const claimSend = internalMutation({
       return null;
     }
     const info = await inspectDelivery(ctx, row);
-    if (info.reason !== "eligible" || info.contextKey !== row.contextKey) {
+    if (
+      info.reason !== "eligible" ||
+      info.contextKey !== row.contextKey ||
+      verifiedShopSender(info.shop ?? null) !== row.payload.from
+    ) {
       await stop(ctx, row, info.reason !== "eligible" ? info.reason : "context_changed");
       return null;
     }

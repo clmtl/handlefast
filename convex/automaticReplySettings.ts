@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { env, mutation, query } from "./_generated/server";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { effectiveReplyPolicy, replyRule } from "./lib/automaticReplyPolicy";
+import { verifiedShopSender } from "./lib/shopSender";
 
 export const get = query({
   args: { shopId: v.id("shops") },
@@ -13,7 +14,7 @@ export const get = query({
     approvalRequired: v.boolean(),
   }),
   handler: async (ctx, { shopId }) => {
-    const { membership } = await requireShopMembership(ctx, shopId);
+    const { membership, shop } = await requireShopMembership(ctx, shopId);
     const settings = await ctx.db
       .query("shopSettings")
       .withIndex("by_shopId", (q) => q.eq("shopId", shopId))
@@ -24,7 +25,7 @@ export const get = query({
       rules: policy.rules,
       canManage: ["owner", "admin"].includes(membership.role),
       approvalRequired: env.REQUIRE_EMAIL_APPROVAL === "true",
-      configured: Boolean(env.RESEND_API_KEY && env.OPENAI_API_KEY),
+      configured: Boolean(env.RESEND_API_KEY && env.OPENAI_API_KEY && verifiedShopSender(shop)),
     };
   },
 });
@@ -41,7 +42,11 @@ export const save = mutation({
       throw new ConvexError("InvalidReplyRules");
     if (
       enabled &&
-      (!rules.length || !env.RESEND_API_KEY || !env.OPENAI_API_KEY || shop.status === "disabled")
+      (!rules.length ||
+        !env.RESEND_API_KEY ||
+        !env.OPENAI_API_KEY ||
+        !verifiedShopSender(shop) ||
+        shop.status === "disabled")
     )
       throw new ConvexError("AutomaticRepliesUnavailable");
     const settings = await ctx.db
