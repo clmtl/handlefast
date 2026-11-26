@@ -1,5 +1,6 @@
 import { type Infer, v } from "convex/values";
 import { type Category, categoryValidator, priorityValidator } from "./emailClassificationPolicy";
+import { translation } from "./emailTranslationPolicy";
 
 export const AUTO_REPLY_MODEL = "gpt-6-luna";
 export const AUTO_REPLY_WINDOW = 2 * 3600_000;
@@ -96,6 +97,7 @@ export const automaticReplyFields = {
   contextKey: v.optional(v.string()),
   plan: v.optional(planValidator),
   payload: v.optional(emailPayload),
+  translation: v.optional(translation),
   replyToken: v.optional(v.string()),
   providerId: v.optional(v.string()),
   sentAt: v.optional(v.number()),

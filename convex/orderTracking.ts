@@ -1,80 +1,41 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { z } from "zod";
 import { internal } from "./_generated/api";
-import { env, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { action, env, internalMutation } from "./_generated/server";
+import { requireShopMembership } from "./lib/authorization";
 import { shipmentFields, trackingUpdate } from "./lib/commerceModel";
 import { normalizeTracking, track17 } from "./lib/commerceProviders";
-import { permittedTestParcel } from "./lib/localTesting";
 
-export const claim = internalMutation({
-  args: {},
-  returns: v.array(
-    v.object({ _id: v.id("orderShipments"), _creationTime: v.number(), ...shipmentFields }),
-  ),
-  handler: async (ctx) => {
-    const rows = await ctx.db
-      .query("orderShipments")
-      .withIndex("by_active_and_nextAttemptAt", (q) =>
-        q.eq("active", true).lte("nextAttemptAt", Date.now()),
-      )
-      .take(20);
-    const allowed = [];
-    for (const row of rows) {
-      if (!permittedTestParcel(row.number, env.TRACK17_TEST_NUMBERS)) {
-        await ctx.db.patch(row._id, {
-          error: "TrackingTestLimit",
-          nextAttemptAt: Date.now() + 24 * 3600_000,
-        });
-        continue;
-      }
-      await ctx.db.patch(row._id, { nextAttemptAt: Date.now() + 10 * 60_000 });
-      allowed.push(row);
-    }
-    return allowed;
+export const claimManual = internalMutation({
+  args: { shipmentId: v.id("orderShipments") },
+  returns: v.object({ _id: v.id("orderShipments"), _creationTime: v.number(), ...shipmentFields }),
+  handler: async (ctx, { shipmentId }) => {
+    const row = await ctx.db.get(shipmentId);
+    if (!row) throw new ConvexError("TrackingUnavailable");
+    const { shop, membership } = await requireShopMembership(ctx, row.shopId);
+    const connection = await ctx.db.get(row.connectionId);
+    if (
+      membership.role === "viewer" ||
+      shop.status === "disabled" ||
+      !row.active ||
+      connection?.status !== "active" ||
+      connection.generation !== row.generation ||
+      (row.manualRefreshUntil ?? 0) > Date.now()
+    )
+      throw new ConvexError("TrackingUnavailable");
+    await ctx.db.patch(shipmentId, { manualRefreshUntil: Date.now() + 60_000 });
+    return row;
   },
 });
-export const poll = internalAction({
-  args: {},
-  returns: v.null(),
-  handler: async (ctx) => {
-    if (!env.TRACK17_API_KEY) return null;
-    const rows = await ctx.runMutation(internal.orderTracking.claim, {});
-    // One item per scheduled invocation keeps registration + read below 3 requests/second.
-    for (const [index, row] of rows.entries())
-      await ctx.scheduler.runAfter(index * 1000, internal.orderTracking.refresh, {
-        shipmentId: row._id,
-        generation: row.generation,
-      });
-    return null;
-  },
-});
-export const shipment = internalQuery({
-  args: { shipmentId: v.id("orderShipments"), generation: v.string() },
-  returns: v.union(
-    v.null(),
-    v.object({ _id: v.id("orderShipments"), _creationTime: v.number(), ...shipmentFields }),
-  ),
-  handler: async (ctx, args) => {
-    const row = await ctx.db.get(args.shipmentId);
-    const connection = row ? await ctx.db.get(row.connectionId) : null;
-    const shop = row ? await ctx.db.get(row.shopId) : null;
-    return row?.active &&
-      permittedTestParcel(row.number, env.TRACK17_TEST_NUMBERS) &&
-      row.generation === args.generation &&
-      connection?.status === "active" &&
-      connection.generation === args.generation &&
-      shop?.status !== "disabled"
-      ? row
-      : null;
-  },
-});
-export const refresh = internalAction({
-  args: { shipmentId: v.id("orderShipments"), generation: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
+
+export const refreshManually = action({
+  args: { shipmentId: v.id("orderShipments") },
+  returns: v.boolean(),
+  handler: async (ctx, { shipmentId }): Promise<boolean> => {
     const key = env.TRACK17_API_KEY;
-    const row = await ctx.runQuery(internal.orderTracking.shipment, args);
-    if (!key || !row) return null;
+    if (!key) throw new ConvexError("TrackingUnavailable");
+    const row = await ctx.runMutation(internal.orderTracking.claimManual, { shipmentId });
+    const args = { shipmentId, generation: row.generation };
     try {
       let carrier = row.carrier;
       if (!row.registered) {
@@ -103,11 +64,13 @@ export const refresh = internalAction({
           carrier: update.carrier,
         });
         await ctx.runMutation(internal.orderTracking.apply, { update, cursor: null });
+        return true;
       }
+      throw new Error("TrackingInformationUnavailable");
     } catch {
       await ctx.runMutation(internal.orderTracking.failed, args);
+      return false;
     }
-    return null;
   },
 });
 export const registered = internalMutation({

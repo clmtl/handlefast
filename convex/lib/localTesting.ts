@@ -10,24 +10,3 @@ export function localTestOrigins(value: string | undefined) {
     ),
   ];
 }
-
-export function trackingTestNumbers(value: string | undefined): Set<string> | null {
-  if (value === undefined) return null;
-  try {
-    const numbers: unknown = JSON.parse(value);
-    if (
-      !Array.isArray(numbers) ||
-      numbers.length > 5 ||
-      numbers.some((number) => typeof number !== "string" || !number.trim() || number.length > 100)
-    )
-      return new Set();
-    return new Set(numbers.map((number) => number.trim()));
-  } catch {
-    return new Set();
-  }
-}
-
-export function permittedTestParcel(number: string, configuration: string | undefined) {
-  const selection = trackingTestNumbers(configuration);
-  return selection === null || selection.has(number);
-}

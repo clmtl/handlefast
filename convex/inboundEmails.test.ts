@@ -196,6 +196,46 @@ describe("inbound email routing", () => {
       { direction: "outbound" },
       { direction: "inbound" },
     ]);
+
+    const args = { receiptId: receipts[2]._id, includeOlder: false };
+    const timeline = await owner.client.query(api.emailConversations.timeline, args);
+    expect(timeline.map((message) => [message.direction, message.text])).toEqual([
+      ["inbound", "Message original"],
+      ["outbound", "Message original"],
+      ["inbound", "Message original"],
+    ]);
+    await expect(outsider.client.query(api.emailConversations.timeline, args)).rejects.toThrow(
+      "Forbidden",
+    );
+    const id = timeline[0].id;
+    await expect(outsider.client.mutation(internal.emailTranslation.claim, { id })).rejects.toThrow(
+      "Forbidden",
+    );
+    const job = await owner.client.mutation(internal.emailTranslation.claim, { id });
+    expect(job?.text).toBe("Message original");
+    expect(await owner.client.mutation(internal.emailTranslation.claim, { id })).toBeNull();
+    if (!job) throw new Error("Translation job missing");
+    await t.mutation(internal.emailTranslation.complete, {
+      id,
+      retryAt: job.retryAt,
+      text: "Traduction de test",
+    });
+    const [translated] = await owner.client.query(api.emailConversations.timeline, args);
+    expect(translated.text).toBe("Message original");
+    expect(translated.translation).toEqual({ state: "translated", text: "Traduction de test" });
+
+    if (source === "gmail") {
+      const gmailPath = `${path}&thread=abcdef123`;
+      await owner.client.fetch(gmailPath, request(first));
+      const unreferenced = raw("no-references", address, customer, 20);
+      const response = await owner.client.fetch(gmailPath, request(unreferenced));
+      expect(await response.json()).toEqual({ result: "imported" });
+      expect(
+        (await owner.client.query(api.emailConversations.timeline, args)).map(
+          (item) => item.direction,
+        ),
+      ).toEqual(["inbound", "outbound", "inbound", "outbound"]);
+    }
   });
 
   test("verifies reception on the first ordinary email to the configured support address", async () => {
