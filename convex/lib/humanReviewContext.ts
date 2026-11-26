@@ -1,7 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { cachedOrderContext } from "../orderContext";
-import { matchesRule } from "./automaticReplyPolicy";
+import { effectiveReplyPolicy, matchesRule } from "./automaticReplyPolicy";
 import { type ReviewWarning, replyBlockReason } from "./humanReviewPolicy";
 
 export async function humanReviewContext(
@@ -77,13 +77,14 @@ export async function humanReviewContext(
     .query("automaticReplies")
     .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
     .unique();
+  const policy = effectiveReplyPolicy(settings);
   const reason =
     automatic && ["failed", "uncertain", "cancelled"].includes(automatic.status)
       ? ("automatic_unavailable" as const)
       : replyBlockReason(
-          settings?.autoReplyEnabled ?? false,
+          policy.enabled && (!policy.preset || Boolean(receipt.autoReplyEligibility?.eligible)),
           receipt.classification,
-          matchesRule(settings?.autoReplyRules, receipt.classification),
+          matchesRule(policy.rules, receipt.classification),
         );
   // Capture only the chosen order, never broad candidates or private delivery addresses.
   const prompt = JSON.stringify({

@@ -7,6 +7,29 @@ export const AUTO_REPLY_LEASE = 120_000;
 export const AUTO_REPLY_COOLDOWN = 30 * 60_000;
 export const replyRule = v.object({ category: categoryValidator, priority: priorityValidator });
 export type ReplyRule = Infer<typeof replyRule>;
+export const defaultReplyRules: ReplyRule[] = [
+  { category: "order_status", priority: "low" },
+  { category: "order_status", priority: "normal" },
+];
+
+export function effectiveReplyPolicy(
+  settings: {
+    autoReplyEnabled: boolean;
+    autoReplyRules?: ReplyRule[];
+    autoReplyRevision?: number;
+  } | null,
+) {
+  const preset = Boolean(
+    settings && settings.autoReplyRevision === undefined && settings.autoReplyRules === undefined,
+  );
+  return {
+    preset,
+    enabled: preset || (settings?.autoReplyEnabled ?? false),
+    rules: preset ? defaultReplyRules : (settings?.autoReplyRules ?? []),
+    revision: settings?.autoReplyRevision ?? 0,
+  };
+}
+
 export const autoReplyStatus = v.union(
   v.literal("queued"),
   v.literal("generating"),

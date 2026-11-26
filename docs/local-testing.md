@@ -31,10 +31,10 @@ pas de serveur Convex de développement. Utiliser son compte HandleFast habituel
 6. **Assistance humaine** : ouvrir une demande nécessitant une intervention,
    consulter le résumé et le brouillon, modifier le brouillon puis changer le
    statut À traiter / En cours / Traité.
-7. **Réponse automatique** : configurer une règle pour une catégorie et une
-   importance, puis envoyer une nouvelle demande de test depuis sa propre boîte.
-   Contrôler le statut d’envoi et la réception de la réponse. L’activation concerne
-   les nouveaux emails de toute la boutique ; désactiver la règle après la recette.
+7. **Réponse automatique** : envoyer depuis sa propre boîte une nouvelle demande
+   simple de suivi (importance faible ou normale). Les règles par défaut sont déjà
+   actives si la boutique n’a jamais enregistré de réglage. Vérifier la réponse
+   et son statut dans le lecteur.
 8. **Retards** : renseigner les délais et le calendrier de la boutique, conserver
    le mode simulation, lancer l’analyse puis consulter les candidats et les motifs
    de blocage. La simulation n’envoie aucun email.

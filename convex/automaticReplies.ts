@@ -10,6 +10,7 @@ import {
   AUTO_REPLY_WINDOW,
   activeAutoReply,
   autoReplyStatus,
+  effectiveReplyPolicy,
   emailPayload,
   matchesRule,
   planValidator,
@@ -36,9 +37,10 @@ async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision
     .query("shopSettings")
     .withIndex("by_shopId", (q) => q.eq("shopId", receipt.shopId))
     .unique();
+  const policy = effectiveReplyPolicy(settings);
   if (
-    !settings?.autoReplyEnabled ||
-    (settings.autoReplyRevision ?? 0) !== revision ||
+    !policy.enabled ||
+    policy.revision !== revision ||
     !receipt.autoReplyEligibility?.eligible ||
     receipt.autoReplyEligibility.revision !== revision
   )
@@ -59,7 +61,7 @@ async function inspect(ctx: MutationCtx, receipt: Doc<"emailReceipts">, revision
     !Number.isFinite(classification.confidence) ||
     (classification.confidence ?? 0) < 0.9 ||
     (classification.confidence ?? 0) > 1 ||
-    !matchesRule(settings.autoReplyRules, classification)
+    !matchesRule(policy.rules, classification)
   )
     return { blocked: "classification_or_rule" } as const;
   if (receipt.classificationJob) return { blocked: "classification_pending" } as const;

@@ -161,7 +161,7 @@ async function policy(f: Base) {
       .unique(),
   );
 }
-async function finishScan(f: Base, simulation: boolean) {
+async function finishScan(f: Base, simulation: boolean, scheduled = !simulation) {
   const p = await policy(f);
   if (!p?.scanToken) throw new Error("Missing scan");
   await f.t.mutation(internal.deliveryMonitoring.scanPage, {
@@ -169,6 +169,7 @@ async function finishScan(f: Base, simulation: boolean) {
     token: p.scanToken,
     revision: p.revision,
     simulation,
+    scheduled,
     cursor: null,
   });
 }
@@ -319,6 +320,25 @@ test("default configuration is absent; simulation is the first configured mode a
   });
   expect(list.page[0]).toMatchObject({ simulation: true, reason: "eligible" });
   expect(list.page[0].text).toContain("#QA8001");
+});
+
+test("manual simulation leaves a due live scan available without sending", async () => {
+  const f = await fixture(true);
+  const p = await policy(f);
+  if (!p) throw new Error("Missing policy");
+  const due = Date.now() - 1;
+  await f.t.run((ctx) => ctx.db.patch(p._id, { nextRunAt: due }));
+  await f.shop.client.mutation(api.deliveryMonitoring.simulate, { shopId: f.shop.shopId });
+  expect((await policy(f))?.nextRunAt).toBe(due);
+  await finishScan(f, true);
+  expect((await policy(f))?.nextRunAt).toBe(due);
+  expect(await notice(f)).toMatchObject({ status: "none", evaluatedMode: "simulation" });
+  expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+
+  await f.t.mutation(internal.deliveryMonitoring.recover, {});
+  await finishScan(f, false);
+  expect(await notice(f)).toMatchObject({ status: "queued", evaluatedMode: "live" });
+  expect((await policy(f))?.nextRunAt).toBeGreaterThan(Date.now());
 });
 
 test("live activation requires a completed simulation of unchanged settings and applies only to new orders", async () => {
@@ -530,6 +550,9 @@ test("live sends once per stable Shopify order identity, even after duplicate sc
     attempts: 1,
     providerId: "accepted-notice",
   });
+  const accepted = await notice(f);
+  await scan(f);
+  expect(await notice(f)).toEqual(accepted);
   await scan(f, false);
   await f.t.action(internal.deliveryNotificationProcessing.send, { id: n._id });
   expect(mock).toHaveBeenCalledTimes(1);

@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { env, mutation, query } from "./_generated/server";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
-import { replyRule } from "./lib/automaticReplyPolicy";
+import { effectiveReplyPolicy, replyRule } from "./lib/automaticReplyPolicy";
 
 export const get = query({
   args: { shopId: v.id("shops") },
@@ -17,9 +17,10 @@ export const get = query({
       .query("shopSettings")
       .withIndex("by_shopId", (q) => q.eq("shopId", shopId))
       .unique();
+    const policy = effectiveReplyPolicy(settings);
     return {
-      enabled: settings?.autoReplyEnabled ?? false,
-      rules: settings?.autoReplyRules ?? [],
+      enabled: policy.enabled,
+      rules: policy.rules,
       canManage: ["owner", "admin"].includes(membership.role),
       configured: Boolean(env.RESEND_API_KEY && env.OPENAI_API_KEY),
     };
@@ -50,6 +51,7 @@ export const save = mutation({
       `${a.category}:${a.priority}`.localeCompare(`${b.category}:${b.priority}`),
     );
     if (
+      !effectiveReplyPolicy(settings).preset &&
       settings.autoReplyEnabled === enabled &&
       JSON.stringify(settings.autoReplyRules ?? []) === JSON.stringify(sorted)
     )

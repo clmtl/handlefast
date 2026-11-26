@@ -89,6 +89,7 @@ async function fixture(
     headers?: { name: string; value: string }[];
     replyTo?: string;
     old?: boolean;
+    newlyReserved?: boolean;
     classification?: Classification;
     text?: string;
   } = {},
@@ -105,29 +106,47 @@ async function fixture(
     });
   const now = Date.now(),
     receivedAt = options.old ? now - 1000 : now;
-  const receiptId = await t.run((ctx) =>
-    ctx.db.insert("emailReceipts", {
+  const envelopeFrom = "client@example.com";
+  const envelopeTo = route.address;
+  const sha256 = `${"A".repeat(43)}=`;
+  const rawSize = 100;
+  const reserved = options.newlyReserved
+    ? await t.mutation(internal.emailReceipts.reserve, {
+        envelopeFrom,
+        envelopeTo,
+        sha256,
+        rawSize,
+      })
+    : undefined;
+  if (reserved?.status === "rejected") throw new Error("Fixture receipt rejected");
+  const deliveryKey = reserved ? `${envelopeTo}:${sha256}` : "auto-fixture";
+  const receiptId = await t.run(async (ctx) => {
+    if (reserved) {
+      await ctx.db.patch(reserved.receiptId, { status: "processing", attempts: 1 });
+      return reserved.receiptId;
+    }
+    return ctx.db.insert("emailReceipts", {
       organizationId: shop.organizationId,
       shopId: shop.shopId,
       routeId: route._id,
-      key: "auto-fixture",
-      envelopeFrom: "client@example.com",
-      envelopeTo: route.address,
-      sha256: "synthetic",
-      rawSize: 100,
+      key: deliveryKey,
+      envelopeFrom,
+      envelopeTo,
+      sha256,
+      rawSize,
       receivedAt,
       expiresAt: now + 86400000,
       status: "processing",
       attempts: 1,
       nextAttemptAt: now,
       updatedAt: now,
-    }),
-  );
+    });
+  });
   await t.mutation(internal.inboundEmails.ingestFromWorker, {
     provider: "cloudflare_email_routing",
-    deliveryKey: "auto-fixture",
-    envelopeFrom: "client@example.com",
-    envelopeTo: route.address,
+    deliveryKey,
+    envelopeFrom,
+    envelopeTo,
     from: { address: "client@example.com" },
     to: [{ address: route.address }],
     cc: [],
@@ -183,6 +202,42 @@ async function ready(f: Fixture, proposal: ReplyPlan = plan) {
 async function receipt(f: Fixture) {
   return f.t.run((ctx) => ctx.db.get(f.receiptId));
 }
+
+test("untouched shops queue new simple tracking replies and honor an explicit pause", async () => {
+  const f = await fixture({ enabled: false, newlyReserved: true });
+  const { shopId } = f.shop;
+  const settings = await f.shop.client.query(api.automaticReplySettings.get, { shopId });
+  expect(settings).toMatchObject({
+    enabled: true,
+    rules: [
+      { category: "order_status", priority: "low" },
+      { category: "order_status", priority: "normal" },
+    ],
+  });
+  expect(await receipt(f)).toMatchObject({
+    autoReplyEligibility: { eligible: true, revision: 0 },
+  });
+  expect(await row(f)).toMatchObject({ status: "queued" });
+  await f.shop.client.mutation(api.automaticReplySettings.save, {
+    shopId,
+    enabled: false,
+    rules: settings.rules,
+  });
+  expect(await f.shop.client.query(api.automaticReplySettings.get, { shopId })).toMatchObject({
+    enabled: false,
+    rules: settings.rules,
+  });
+  const paused = await f.t.mutation(internal.emailReceipts.reserve, {
+    envelopeFrom: "client@example.com",
+    envelopeTo: f.route.address,
+    sha256: `${"B".repeat(43)}=`,
+    rawSize: 100,
+  });
+  if (paused.status === "rejected") throw new Error("Fixture receipt rejected");
+  expect(await f.t.run((ctx) => ctx.db.get(paused.receiptId))).toMatchObject({
+    autoReplyEligibility: { eligible: false, revision: 1 },
+  });
+});
 
 test("new enabled matching emails queue once, show automatic status and suppress human proposals", async () => {
   const f = await fixture(),

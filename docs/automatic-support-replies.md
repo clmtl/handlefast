@@ -1,6 +1,6 @@
 # Automatic support replies (feature 7)
 
-Owners and administrators configure **Réponses automatiques** in the dashboard. Each shop has an enable switch and an explicit matrix of ten categories × four importance levels. Agents/viewers can read the rules; only owners/admins can change them. Automation is disabled by default with no rules. Existing merchant settings were not enabled during acceptance.
+Owners and administrators configure **Réponses automatiques** in the dashboard. Shops without a saved policy automatically handle low- and normal-priority order status requests. A saved policy or explicit pause is respected. Owners and administrators can pause automation or customize the category and importance rules. Agents and viewers can read the rules. The default applies to newly reserved receipts only.
 
 Rules apply only to newly received SAV emails after activation. Historical emails and manual moves into SAV cannot trigger retrospective sends. Saving a changed policy increments its revision: pending work from the previous revision cannot send. The reader displays the response text, recipient, time and sending status; staff can cancel pending work and take over.
 

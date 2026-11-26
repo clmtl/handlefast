@@ -6,6 +6,8 @@ import {
   requireShopMembership,
 } from "./lib/authorization";
 
+import { effectiveReplyPolicy } from "./lib/automaticReplyPolicy";
+
 export const listForOrganization = query({
   args: {
     organizationId: v.id("organizations"),
@@ -69,12 +71,15 @@ export const updateSettings = mutation({
       });
     }
 
+    const policy = effectiveReplyPolicy(settings);
     const settingsPatch = {
       locale: args.locale?.trim() || settings.locale,
       timezone: args.timezone?.trim() || settings.timezone,
       autoReplyEnabled: args.autoReplyEnabled ?? settings.autoReplyEnabled,
-      ...(args.autoReplyEnabled !== undefined && args.autoReplyEnabled !== settings.autoReplyEnabled
+      ...(args.autoReplyEnabled !== undefined &&
+      (policy.preset || args.autoReplyEnabled !== policy.enabled)
         ? {
+            autoReplyRules: policy.rules,
             autoReplyRevision: (settings.autoReplyRevision ?? 0) + 1,
             autoReplyActivatedAt: args.autoReplyEnabled ? now : undefined,
           }

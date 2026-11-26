@@ -19,19 +19,25 @@ import {
   validDeliveryConfig,
 } from "./lib/deliveryPolicy";
 
-async function startScan(ctx: MutationCtx, policy: Doc<"deliveryPolicies">, simulation: boolean) {
+async function startScan(
+  ctx: MutationCtx,
+  policy: Doc<"deliveryPolicies">,
+  simulation: boolean,
+  scheduled = false,
+) {
   if (policy.scanToken && (policy.scanStartedAt ?? 0) > Date.now() - 5 * 60_000) return;
   const token = crypto.randomUUID();
   await ctx.db.patch(policy._id, {
     scanToken: token,
     scanStartedAt: Date.now(),
-    nextRunAt: Date.now() + 5 * 60_000,
+    ...(scheduled ? { nextRunAt: Date.now() + 5 * 60_000 } : {}),
   });
   await ctx.scheduler.runAfter(0, internal.deliveryMonitoring.scanPage, {
     shopId: policy.shopId,
     token,
     revision: policy.revision,
     simulation,
+    scheduled,
     cursor: null,
   });
 }
@@ -105,6 +111,7 @@ export const save = mutation({
         ([key, value]) =>
           JSON.stringify(existing[key as keyof typeof config]) === JSON.stringify(value),
       );
+    if (same && existing.mode === mode) return null;
     if (mode === "live") {
       const connection = await ctx.db
         .query("shopifyConnections")
@@ -129,7 +136,6 @@ export const save = mutation({
       )
         throw new ConvexError("SimulateBeforeLive");
     }
-    if (same && existing.mode === mode) return null;
     const versionId = same
       ? existing.versionId
       : await ctx.db.insert("deliveryPolicyVersions", {
@@ -249,6 +255,7 @@ export const scanPage = internalMutation({
     token: v.string(),
     revision: v.number(),
     simulation: v.boolean(),
+    scheduled: v.optional(v.boolean()),
     cursor: v.union(v.string(), v.null()),
   },
   returns: v.null(),
@@ -266,10 +273,12 @@ export const scanPage = internalMutation({
       )
       .paginate({ numItems: 10, cursor: args.cursor });
     const simulation = args.simulation || policy.mode !== "live";
+    // Jobs queued before the rollout still advance the schedule as they did before.
+    const scheduled = args.scheduled ?? true;
     for (const order of result.page) {
       const id = await ensureDeliveryPromise(ctx, order),
         row = id ? await ctx.db.get(id) : null;
-      if (!row) continue;
+      if (!row || (simulation && row.status !== "none")) continue;
       const info = await inspectDelivery(ctx, row, policy);
       const reason =
         !simulation && (row.estimated || row.placedAt < (policy.liveFrom ?? Infinity))
@@ -349,7 +358,7 @@ export const scanPage = internalMutation({
     if (!result.isDone) {
       await ctx.db.patch(policy._id, {
         scanStartedAt: Date.now(),
-        nextRunAt: Date.now() + 5 * 60_000,
+        ...(scheduled ? { nextRunAt: Date.now() + 5 * 60_000 } : {}),
       });
       await ctx.scheduler.runAfter(0, internal.deliveryMonitoring.scanPage, {
         ...args,
@@ -360,7 +369,9 @@ export const scanPage = internalMutation({
         scanToken: undefined,
         scanStartedAt: undefined,
         lastScanAt: Date.now(),
-        nextRunAt: nextDeliveryRun(Date.now(), policy.timezone, policy.hour),
+        ...(scheduled
+          ? { nextRunAt: nextDeliveryRun(Date.now(), policy.timezone, policy.hour) }
+          : {}),
         ...(simulation
           ? { lastSimulationAt: Date.now(), simulatedVersionId: policy.versionId }
           : {}),
@@ -505,7 +516,7 @@ export const recover = internalMutation({
         .query("deliveryPolicies")
         .withIndex("by_mode_and_nextRunAt", (q) => q.eq("mode", mode).lte("nextRunAt", Date.now()))
         .take(10);
-      for (const policy of policies) await startScan(ctx, policy, mode === "simulation");
+      for (const policy of policies) await startScan(ctx, policy, mode === "simulation", true);
     }
     for (const status of ["queued", "sending", "retrying"] as const) {
       const rows = await ctx.db

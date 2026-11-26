@@ -138,8 +138,8 @@ context. It uses cached order/parcel information and the existing backend-only
 
 ## Automatic support replies (feature 7)
 
-Owners/admins can enable replies for explicit category/importance combinations per
-shop. Rules apply to future receipts only; automation starts disabled. GPT-6 Luna
+Untouched shops automatically handle low- and normal-priority order status requests.
+Owners/admins can pause or customize the rules. The preset applies to new receipts. GPT-6 Luna
 selects a bounded response type, rendered from French/English/Spanish templates
 using cached facts. Resend sends the reply with stable idempotency; individual
 Reply-To aliases preserve conversations across provider Message-ID rewrites.
