@@ -222,6 +222,29 @@ const copy = {
       Returned: "Devuelto",
     },
   },
+  de: {
+    hello: "Guten Tag,",
+    reference:
+      "Damit wir Ihre Bestellung finden können, teilen Sie uns bitte die Bestellnummer und die beim Kauf verwendete E-Mail-Adresse mit.",
+    details:
+      "Damit wir Ihre Anfrage prüfen können, nennen Sie uns bitte den betroffenen Artikel und beschreiben Sie das Problem oder die gewünschte Änderung. Bei einem Defekt kann ein Foto hilfreich sein.",
+    resolved:
+      "Vielen Dank für Ihre Rückmeldung. Es freut uns, dass das Problem gelöst ist. Wenn Sie weitere Hilfe benötigen, melden Sie sich gern wieder bei uns.",
+    tracking: "Hier finden Sie die zuletzt erfassten Informationen zu Ihrer Bestellung",
+    status: "Versandstatus",
+    pending: "In Vorbereitung",
+    updated:
+      "Dies ist der zuletzt erfasste Status. Ein Liefertermin lässt sich daraus nicht ableiten.",
+    bye: "Mit freundlichen Grüßen",
+    statuses: {
+      InfoReceived: "Versandinformationen erhalten",
+      InTransit: "Unterwegs",
+      AvailableForPickup: "Zur Abholung bereit",
+      OutForDelivery: "In Zustellung",
+      Delivered: "Zugestellt",
+      Returned: "Zurückgesandt",
+    },
+  },
 };
 export function renderAutomaticReply(
   plan: ReplyPlan,

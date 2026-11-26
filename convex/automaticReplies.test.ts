@@ -367,17 +367,20 @@ test("uncertain or action-required plans hand off without sending", async () => 
   }
 });
 
-test("replies use the shop locale, and a change invalidates an unsent reply", async () => {
-  const f = await fixture({ locale: "en-GB" });
+test.each([
+  ["en-GB", "Hello"],
+  ["de-AT", "Guten Tag"],
+])("replies use %s, and a change invalidates an unsent reply", async (locale, greeting) => {
+  const f = await fixture({ locale });
   const reply = await ready(f, { ...plan, language: "other" });
-  expect(reply.payload?.text).toContain("Hello");
+  expect(reply.payload?.text).toContain(greeting);
   expect(reply.payload?.text).not.toContain("Bonjour");
   await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "es" }));
   expect(await f.t.mutation(internal.automaticReplies.claimSend, { id: reply._id })).toBeNull();
   expect(await row(f)).toMatchObject({ status: "cancelled" });
 });
 
-test.each([null, "de"])("hands off when the shop language %s has no template", async (locale) => {
+test.each([null, "it"])("hands off when the shop language %s has no template", async (locale) => {
   const f = await fixture({ locale });
   expect(await row(f)).toBeNull();
   expect((await receipt(f))?.humanReview).toMatchObject({ status: "open" });

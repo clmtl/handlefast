@@ -141,7 +141,7 @@ context. It uses cached order/parcel information and the existing backend-only
 Untouched shops automatically handle low- and normal-priority order status requests.
 Owners/admins can pause or customize the rules. The preset applies to new receipts. GPT-6 Luna
 selects a bounded response type, rendered using cached facts and reviewed
-French, English or Spanish templates in the shop’s primary Shopify language. Resend sends the reply with stable idempotency; individual
+French, English, Spanish or German templates in the shop’s primary Shopify language. Resend sends the reply with stable idempotency; individual
 Reply-To aliases preserve conversations across provider Message-ID rewrites.
 Uncertain requests and failed/ambiguous sends return to human handling. The reader
 shows the actual response and provider acceptance status. Uses existing backend

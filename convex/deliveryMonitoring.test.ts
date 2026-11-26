@@ -334,20 +334,23 @@ test("default configuration is absent; simulation is the first configured mode a
   });
 });
 
-test("delay previews and outgoing mail follow the current shop language", async () => {
+test.each([
+  ["es-MX", "Hola", "Información sobre tu pedido"],
+  ["de-DE", "Guten Tag", "Information zur Lieferung Ihrer Bestellung"],
+])("delay previews and outgoing mail follow %s", async (locale, greeting, subject) => {
   const f = await fixture(true);
-  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "es-MX" }));
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: locale }));
   await scan(f);
   const list = await f.shop.client.query(api.deliveryMonitoring.list, {
     shopId: f.shop.shopId,
     history: false,
     paginationOpts: { cursor: null, numItems: 10 },
   });
-  expect(list.page[0].text).toContain("Hola");
+  expect(list.page[0].text).toContain(greeting);
 
   await scan(f, false);
   const queued = await notice(f);
-  expect(queued.payload?.subject).toContain("Información sobre tu pedido");
+  expect(queued.payload?.subject).toContain(subject);
   await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "en" }));
   expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
   expect(await notice(f)).toMatchObject({ status: "cancelled", reason: "context_changed" });
@@ -359,7 +362,7 @@ test("delay previews and outgoing mail follow the current shop language", async 
 
 test("delay notifications wait for a supported shop language", async () => {
   const f = await fixture();
-  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "de-DE" }));
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "it-IT" }));
   await scan(f);
   expect(await notice(f)).toMatchObject({ status: "none", reason: "shop_language_unavailable" });
   await expect(

@@ -3,7 +3,12 @@ import { emailPayload } from "./automaticReplyPolicy";
 
 export const deliveryMode = v.union(v.literal("off"), v.literal("simulation"), v.literal("live"));
 export const deliveryCalendar = v.union(v.literal("calendar"), v.literal("business"));
-export const deliveryLocale = v.union(v.literal("fr"), v.literal("en"), v.literal("es"));
+export const deliveryLocale = v.union(
+  v.literal("fr"),
+  v.literal("en"),
+  v.literal("es"),
+  v.literal("de"),
+);
 export const promiseFields = {
   maxDays: v.number(),
   calendar: deliveryCalendar,
@@ -232,6 +237,17 @@ export function delayEmail(
     es: {
       subject: `Información sobre tu pedido ${order}`,
       text: `Hola:\n\nEl plazo de entrega anunciado para tu pedido ${order} ha pasado y nuestra última información todavía no confirma su entrega completa. Sentimos la espera.\n\nQueríamos informarte sin esperar a que nos contactaras. Puedes responder directamente a este correo para contactar con nuestro equipo.\n\nUn saludo,\n${shop}`,
+    },
+    de: {
+      subject: `Information zur Lieferung Ihrer Bestellung ${order}`,
+      text: `Guten Tag,
+
+die angekündigte Lieferfrist für Ihre Bestellung ${order} ist abgelaufen. Nach unserem aktuellen Stand ist die vollständige Zustellung noch nicht bestätigt. Wir entschuldigen uns für die Wartezeit.
+
+Wir möchten Sie frühzeitig darüber informieren. Wenn Sie Fragen haben, können Sie direkt auf diese E-Mail antworten.
+
+Mit freundlichen Grüßen
+${shop}`,
     },
   };
   return copy[locale];

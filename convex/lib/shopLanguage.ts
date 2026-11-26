@@ -12,9 +12,11 @@ export function normalizeShopLocale(value: string) {
 
 export function supportedEmailLanguage(
   locale: string | null | undefined,
-): "fr" | "en" | "es" | null {
+): "fr" | "en" | "es" | "de" | null {
   const language = locale?.split("-")[0];
-  return language === "fr" || language === "en" || language === "es" ? language : null;
+  return language === "fr" || language === "en" || language === "es" || language === "de"
+    ? language
+    : null;
 }
 
 export async function shopLocale(ctx: MutationCtx | QueryCtx, shopId: Id<"shops">) {
