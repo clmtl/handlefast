@@ -4,6 +4,7 @@ import { automaticReplyFields, replyRule } from "./lib/automaticReplyPolicy";
 import { connectionFields, orderFields, shipmentFields } from "./lib/commerceModel";
 import { noticeFields, policyFields, versionFields } from "./lib/deliveryPolicy";
 import { receiptFields } from "./lib/emailReceiptValidators";
+import { translation } from "./lib/emailTranslationPolicy";
 import { guidedFields } from "./lib/shopifyGuidedModel";
 
 export const roleValidator = v.union(
@@ -117,6 +118,7 @@ export default defineSchema({
     .index("by_connectionId", ["connectionId"])
     .index("by_active_and_nextAttemptAt", ["active", "nextAttemptAt"]),
   automaticReplies: defineTable(automaticReplyFields)
+    .index("by_conversationId_and_status", ["conversationId", "status"])
     .index("by_replyToken", ["replyToken"])
     .index("by_receiptId", ["receiptId"])
     .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"]),
@@ -326,6 +328,8 @@ export default defineSchema({
     html: v.optional(v.string()),
     snippet: v.optional(v.string()),
     headers: v.array(inboundEmailHeaderValidator),
+    translation: v.optional(translation),
+    gmailThreadId: v.optional(v.string()),
     messageId: v.optional(v.string()),
     inReplyTo: v.optional(v.string()),
     references: v.array(v.string()),
@@ -345,6 +349,7 @@ export default defineSchema({
     .index("by_conversationId_and_receivedAt", ["conversationId", "receivedAt"])
     .index("by_shopId_and_createdAt", ["shopId", "createdAt"])
     .index("by_shopId_and_from_address_and_receivedAt", ["shopId", "from.address", "receivedAt"])
+    .index("by_shopId_and_gmailThreadId", ["shopId", "gmailThreadId"])
     .index("by_deliveryId", ["deliveryId"])
     .index("by_receiptId", ["receiptId"])
     .index("by_expiresAt", ["expiresAt"])

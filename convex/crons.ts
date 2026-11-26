@@ -13,11 +13,6 @@ crons.interval(
   internal.shopifySync.recover,
 );
 crons.interval(
-  "subscribe and reconcile shipment tracking",
-  { minutes: 1 },
-  internal.orderTracking.poll,
-);
-crons.interval(
   "expire commerce connections and order cache",
   { hours: 1 },
   internal.commerceMaintenance.expire,

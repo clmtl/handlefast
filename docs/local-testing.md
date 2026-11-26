@@ -29,10 +29,9 @@ pas de serveur Convex de développement. Utiliser son compte HandleFast habituel
 5. **Catégorie et importance** : ouvrir un email SAV, vérifier ses étiquettes,
    utiliser les filtres puis corriger une étiquette.
 6. **Assistance humaine** : ouvrir une demande nécessitant une intervention,
-   consulter le résumé et le brouillon, modifier le brouillon puis changer le
-   statut À traiter / En cours / Traité.
+   lire l’échange complet, modifier le brouillon puis marquer la conversation comme traitée.
 7. **Réponse SAV** : ouvrir une demande, modifier le brouillon, puis choisir
-   **Relire et envoyer**. Vérifier l’adresse HandleFast de la boutique, le
+   **Vérifier l’envoi**. Vérifier l’adresse HandleFast de la boutique, le
    destinataire et le texte. Le clic **Confirmer et envoyer** autorise cet envoi.
    Pendant le test, le propriétaire confirme chaque réponse et chaque avis de retard.
 8. **Retards** : renseigner les délais et le calendrier de la boutique, conserver
@@ -42,18 +41,11 @@ pas de serveur Convex de développement. Utiliser son compte HandleFast habituel
 
 Tous les traitements IA restent sur **GPT-6 Luna**.
 
-## Limite 17TRACK
+## Suivi 17TRACK
 
-Le backend de staging utilise `TRACK17_TEST_NUMBERS`, une liste JSON d’au plus
-**5 numéros déjà enregistrés**. Seuls ces numéros peuvent être enregistrés ou lus
-auprès de 17TRACK, y compris après une synchronisation Shopify ou via le planificateur.
-Les autres commandes et historiques déjà en cache restent visibles. Leur
-actualisation peut afficher « 5 colis de test autorisés ».
-
-Une liste vide, malformée ou de plus de cinq entrées bloque tous les appels de
-suivi. L’absence de la variable rétablit le fonctionnement normal sans limite de
-recette : conserver la variable pendant les tests. Les notifications entrantes
-17TRACK continuent à mettre à jour les historiques existants sans appel sortant.
+Dans **Commande et suivi**, cliquer sur **Actualiser avec 17TRACK** pour le colis concerné.
+Les synchronisations Shopify et l’ouverture d’une conversation utilisent le suivi déjà en cache.
+Les notifications entrantes 17TRACK continuent de mettre à jour les historiques sans appel sortant.
 
 `LOCAL_TEST_ORIGINS` autorise explicitement `http://localhost:3000` et
 `http://127.0.0.1:3000` pour l’authentification. Aucune autre origine locale ou

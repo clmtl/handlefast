@@ -175,7 +175,7 @@ export function OrderContext({
           <div className="space-y-4">
             {context.shipments.length ? (
               context.shipments.map((shipment) => (
-                <Shipment key={shipment._id} shipment={shipment} />
+                <Shipment key={shipment._id} shipment={shipment} canEdit={context.canEdit} />
               ))
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -277,7 +277,23 @@ export function OrderContext({
     </aside>
   );
 }
-function Shipment({ shipment }: { shipment: Doc<"orderShipments"> }) {
+function Shipment({ shipment, canEdit }: { shipment: Doc<"orderShipments">; canEdit: boolean }) {
+  const refresh = useAction(api.orderTracking.refreshManually);
+  const [busy, setBusy] = useState(false);
+  const [refreshError, setRefreshError] = useState(false);
+
+  async function refreshTracking() {
+    setBusy(true);
+    setRefreshError(false);
+    try {
+      setRefreshError(!(await refresh({ shipmentId: shipment._id })));
+    } catch {
+      setRefreshError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className={`rounded-md border p-3 ${shipment.active ? "" : "opacity-70"}`}>
       <h4 className="text-sm font-semibold">
@@ -297,11 +313,19 @@ function Shipment({ shipment }: { shipment: Doc<"orderShipments"> }) {
           ? `Suivi vérifié le ${new Date(shipment.syncedAt).toLocaleString()}`
           : "En attente des informations du transporteur."}
       </p>
-      {shipment.error && (
-        <p className="mt-2 text-xs text-destructive">
-          {shipment.error === "TrackingTestLimit"
-            ? "Actualisation suspendue : ce colis ne fait pas partie des 5 colis de test autorisés."
-            : "Suivi temporairement indisponible. Nouvelle tentative prévue."}
+      {canEdit && shipment.active && (
+        <button
+          type="button"
+          className={`${button} mt-3`}
+          disabled={busy}
+          onClick={() => void refreshTracking()}
+        >
+          {busy ? "Actualisation…" : "Actualiser avec 17TRACK"}
+        </button>
+      )}
+      {refreshError && (
+        <p className="mt-2 text-xs text-destructive" role="alert">
+          Impossible d’actualiser le suivi. Réessayez dans une minute.
         </p>
       )}
       <ol className="mt-3 space-y-3 border-l pl-3">
