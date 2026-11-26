@@ -13,6 +13,8 @@ import {
   resolveInboundEmailRoute,
 } from "./lib/inboundEmailRoutes";
 
+import { shopifyContactAddress } from "./lib/shopifyContact";
+
 const maxBodyLength = 12_000;
 const maxHeaderCount = 40;
 const maxHeaderValueLength = 1_000;
@@ -143,7 +145,9 @@ export const ingestFromWorker = internalMutation({
     }
 
     const normalizedFrom = normalizeEmailIdentity(args.from, args.envelopeFrom);
-    const customerEmail = normalizedFrom.address;
+    const replyTo = normalizeEmailIdentities(args.replyTo);
+    const customerEmail =
+      shopifyContactAddress({ from: normalizedFrom, replyTo }) ?? normalizedFrom.address;
     const subject = truncateOptional(args.subject, 1_000);
     const messageId = normalizeOptionalString(args.messageId);
     const inReplyTo = normalizeOptionalString(args.inReplyTo);
@@ -217,7 +221,7 @@ export const ingestFromWorker = internalMutation({
       from: normalizedFrom,
       to: normalizeEmailIdentities(args.to, args.envelopeTo),
       cc: normalizeEmailIdentities(args.cc),
-      replyTo: normalizeEmailIdentities(args.replyTo),
+      replyTo,
       ...(subject ? { subject } : {}),
       ...(text ? { text } : {}),
       ...(html ? { html } : {}),
