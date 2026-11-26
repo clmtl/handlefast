@@ -6,6 +6,7 @@
   "sideEffects": false,
   "scripts": {
     "dev": "vite dev",
+    "dev:connected": "node scripts/dev-connected.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
@@ -15,13 +16,19 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check .",
+    "test": "vitest run",
+    "smoke:commerce": "node scripts/smoke-commerce.mjs",
     "typecheck": "tsc --noEmit",
-    "ui:add": "shadcn add"
+    "ui:add": "shadcn add",
+    "build:staging": "CLOUDFLARE_ENV=staging vite build --mode staging",
+    "deploy:staging": "npm run build:staging && wrangler deploy --config dist/server/wrangler.json"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@ai-sdk/openai": "3.0.41",
+    "@convex-dev/agent": "0.6.3",
     "@convex-dev/better-auth": "^0.12.4",
     "@convex-dev/react-query": "^0.1.0",
     "@inlang/paraglide-js": "^2.20.2",
@@ -34,11 +41,14 @@
     "@tanstack/react-start": "^1.168.26",
     "@tanstack/react-store": "^0.11.0",
     "@tanstack/react-table": "^8.21.3",
+    "ai": "6.0.116",
     "better-auth": "^1.6.22",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.42.0",
     "lucide-react": "^1.21.0",
+    "postal-mime": "^2.7.5",
+    "radix-ui": "^1.8.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tailwind-merge": "^3.6.0",
@@ -50,6 +60,7 @@
     "@biomejs/biome": "^2.5.1",
     "@cloudflare/vite-plugin": "^1.42.3",
     "@cloudflare/workers-types": "^4.20260627.1",
+    "@edge-runtime/vm": "^5.0.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/babel__core": "^7.20.5",
@@ -58,10 +69,12 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "babel-plugin-react-compiler": "^1.0.0",
+    "convex-test": "^0.0.54",
     "shadcn": "^4.12.0",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
+    "vitest": "^4.1.9",
     "wrangler": "^4.105.0"
   }
 }

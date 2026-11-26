@@ -1,9 +1,13 @@
 import * as Sentry from "@sentry/cloudflare";
 import handler from "@tanstack/react-start/server-entry";
+import { uploadIncomingEmail } from "./lib/email-upload";
 
 const workerHandler = {
   fetch(request: Request) {
     return handler.fetch(request);
+  },
+  async email(message, env) {
+    await uploadIncomingEmail(message, env);
   },
 } satisfies ExportedHandler<Env>;
 

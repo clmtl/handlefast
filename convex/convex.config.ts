@@ -1,0 +1,27 @@
+import agent from "@convex-dev/agent/convex.config";
+import betterAuth from "@convex-dev/better-auth/convex.config";
+import { defineApp } from "convex/server";
+import { v } from "convex/values";
+
+const app = defineApp({
+  env: {
+    AUTH_EMAIL_FROM: v.optional(v.string()),
+    BETTER_AUTH_SECRET: v.string(),
+    CLOUDFLARE_EMAIL_WEBHOOK_SECRET: v.optional(v.string()),
+    EMAIL_ROUTE_NAMESPACE: v.optional(v.string()),
+    INBOUND_EMAIL_DOMAIN: v.optional(v.string()),
+    REQUIRE_EMAIL_APPROVAL: v.optional(v.string()),
+    RESEND_API_KEY: v.optional(v.string()),
+    SITE_URL: v.string(),
+    LOCAL_TEST_ORIGINS: v.optional(v.string()),
+    TRACK17_TEST_NUMBERS: v.optional(v.string()),
+    OPENAI_API_KEY: v.optional(v.string()),
+    COMMERCE_ENCRYPTION_KEY: v.optional(v.string()),
+    TRACK17_API_KEY: v.optional(v.string()),
+  },
+});
+
+app.use(betterAuth);
+app.use(agent);
+
+export default app;
