@@ -37,6 +37,9 @@ async function emailContext(ctx: QueryCtx | MutationCtx, receiptId: Doc<"emailRe
   if (!message?.conversationId) throw new ConvexError("SupportEmailRequired");
   return { ...auth, receipt, message };
 }
+
+import { shopifyContactAddress } from "./lib/shopifyContact";
+
 export const forEmail = query({
   args: { receiptId: v.id("emailReceipts") },
   returns: v.union(
@@ -128,7 +131,10 @@ export const authorizeLookup = internalMutation({
     if ((row.lookupAt ?? 0) > Date.now() - 3000)
       throw new ConvexError("PleaseWaitBeforeRefreshing");
     await ctx.db.patch(row._id, { lookupAt: Date.now() });
-    return { connection: row, email: normalizedEmail(message.from.address) ?? "" };
+    return {
+      connection: row,
+      email: normalizedEmail(shopifyContactAddress(message) ?? message.from.address) ?? "",
+    };
   },
 });
 export const lookup = action({
@@ -212,7 +218,7 @@ export async function cachedOrderContext(
     .withIndex("by_shopId", (q) => q.eq("shopId", receipt.shopId))
     .unique();
   if (connection?.status !== "active") return null;
-  const email = normalizedEmail(message.from.address);
+  const email = normalizedEmail(shopifyContactAddress(message) ?? message.from.address);
   const orders = await ctx.db
     .query("shopifyOrders")
     .withIndex("by_shopId_and_generation_and_email", (q) =>

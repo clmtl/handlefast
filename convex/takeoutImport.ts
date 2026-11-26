@@ -5,6 +5,7 @@ import { getOrCreateConversationId } from "./inboundEmails";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
 import { suppressAutoResponse, validMailbox } from "./lib/automaticReplyPolicy";
 import { emailExpiresAt } from "./lib/emailPolicy";
+import { shopifyContactAddress } from "./lib/shopifyContact";
 
 const identity = v.object({ address: v.string(), name: v.optional(v.string()) });
 const field = v.optional(v.string());
@@ -66,13 +67,13 @@ export const commit = internalMutation({
     const incoming = args.direction === "inbound";
     const recipients = [...args.to, ...args.cc];
     const customer = incoming
-      ? args.from
-      : recipients.find((item) => item.address !== shop.supportEmail);
+      ? (shopifyContactAddress(args) ?? args.from.address)
+      : recipients.find((item) => item.address !== shop.supportEmail)?.address;
     if (
       !Number.isFinite(receivedAt) ||
       expiresAt <= now ||
       !customer ||
-      !validMailbox(customer.address) ||
+      !validMailbox(customer) ||
       (incoming
         ? !recipients.some((item) => item.address === shop.supportEmail)
         : args.from.address !== shop.supportEmail)
@@ -107,7 +108,7 @@ export const commit = internalMutation({
         : null);
     const sameThread =
       !automatic && args.gmailThreadId
-        ? await gmailConversation(ctx, shop._id, args.gmailThreadId, customer.address)
+        ? await gmailConversation(ctx, shop._id, args.gmailThreadId, customer)
         : null;
     if (existing || originalReceipt) {
       if (existing && args.gmailThreadId)
@@ -123,7 +124,7 @@ export const commit = internalMutation({
       ? (sameThread ??
         (await getOrCreateConversationId(ctx, {
           route,
-          customerEmail: customer.address,
+          customerEmail: customer,
           inReplyTo: args.inReplyTo ?? null,
           references: args.references,
           subject: args.subject ?? null,

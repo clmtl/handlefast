@@ -3,6 +3,7 @@ import type { Doc } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
 import { clipEmailText, emailBodyText, translation } from "./lib/emailTranslationPolicy";
+import { shopifyContactAddress } from "./lib/shopifyContact";
 
 export function messageText(message: Doc<"supportMessages">) {
   return emailBodyText(message.text, message.html) || message.snippet || "";
@@ -62,7 +63,9 @@ export const timeline = query({
         id: item._id,
         receiptId: item.receiptId,
         direction: item.direction,
-        sender: item.from.name ? `${item.from.name} · ${item.from.address}` : item.from.address,
+        sender:
+          shopifyContactAddress(item) ??
+          (item.from.name ? `${item.from.name} · ${item.from.address}` : item.from.address),
         subject: item.subject ?? "(sans objet)",
         date: item.receivedAt,
         text: clipEmailText(messageText(item)),
