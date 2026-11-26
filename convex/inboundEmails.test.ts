@@ -238,7 +238,10 @@ describe("inbound email routing", () => {
     }
   });
 
-  test("reconnects a Shopify form and a reply using the referenced message and contact address", async () => {
+  test.each([
+    false,
+    true,
+  ])("reconnects a Shopify form and a reply with existing follow-up: %s", async (followUp) => {
     const t = createTestBackend();
     const owner = await createWorkspace(t, "shopify-form");
     const supportEmail = "support@shop.example";
@@ -289,6 +292,17 @@ describe("inbound email routing", () => {
       ],
       30,
     );
+    if (followUp)
+      await importMail(
+        [
+          `From: ${customer}`,
+          `To: ${supportEmail}`,
+          "Subject: Re: Voici les informations",
+          "Message-ID: <followup@example.com>",
+          "In-Reply-To: <reply@example.com>",
+        ],
+        15,
+      );
     const timeline = () =>
       owner.client.query(api.emailConversations.timeline, {
         receiptId: form.receiptId,
@@ -304,8 +318,16 @@ describe("inbound email routing", () => {
     expect(await timeline()).toMatchObject([
       { direction: "inbound", sender: customer },
       { direction: "outbound", sender: supportEmail },
+      ...(followUp ? [{ direction: "inbound", sender: customer }] : []),
     ]);
-    expect((await t.run((ctx) => ctx.db.get(form.conversationId)))?.customerEmail).toBe(customer);
+    if (!followUp)
+      expect((await t.run((ctx) => ctx.db.get(form.conversationId)))?.customerEmail).toBe(customer);
+    expect(
+      await t.mutation(internal.historyMaintenance.reconnectHistoricalReplies, {
+        shopId: owner.shopId,
+        cursor: null,
+      }),
+    ).toEqual({ nextCursor: null, changed: 0 });
     expect(await t.run((ctx) => ctx.db.query("automaticReplies").first())).toBeNull();
   });
 

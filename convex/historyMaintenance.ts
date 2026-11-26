@@ -53,36 +53,42 @@ export const reconnectHistoricalReplies = internalMutation({
       .withIndex("by_shopId_and_createdAt", (q) => q.eq("shopId", shop._id))
       .paginate({ cursor: args.cursor, numItems: 40 });
     let changed = 0;
-    for (const sent of page.page) {
-      if (sent.direction !== "outbound" || !sent.conversationId || (sent.expiresAt ?? 0) <= now)
-        continue;
+    for (const message of page.page) {
+      if (message.direction !== "outbound" || (message.expiresAt ?? 0) <= now) continue;
+      const sent = await ctx.db.get(message._id);
+      if (!sent?.conversationId) continue;
       const before = await ctx.db
         .query("supportMessages")
         .withIndex("by_conversationId_and_direction_and_receivedAt", (q) =>
           q.eq("conversationId", sent.conversationId).eq("direction", "inbound"),
         )
         .first();
-      if (before) continue;
       const conversation = await ctx.db.get(sent.conversationId);
       if (!conversation) continue;
       const reference = await referencedShopifyForm(ctx, sent, conversation.customerEmail, now);
       if (reference?.conversationId) {
+        if (reference.conversationId === conversation._id) continue;
         const parent = await ctx.db.get(reference.conversationId);
-        if (parent?.shopId === shop._id && parent.customerEmail === "mailer@shopify.com")
-          await ctx.db.patch(parent._id, {
-            customerEmail: conversation.customerEmail,
-            updatedAt: now,
-          });
         if (
           parent?.shopId === shop._id &&
           (parent.customerEmail === conversation.customerEmail ||
             parent.customerEmail === "mailer@shopify.com")
         ) {
-          await reconnect(ctx, sent, parent, now);
-          changed++;
+          if (before) {
+            changed += await mergeShopifyThread(ctx, parent, conversation, now);
+          } else {
+            if (parent.customerEmail === "mailer@shopify.com")
+              await ctx.db.patch(parent._id, {
+                customerEmail: conversation.customerEmail,
+                updatedAt: now,
+              });
+            await reconnect(ctx, sent, parent, now);
+            changed++;
+          }
           continue;
         }
       }
+      if (before) continue;
       const subject = normalizedSubject(sent.subject ?? "");
       if (!subject || !replyPrefix.test(sent.subject?.trim() ?? "")) continue;
       const candidates = await ctx.db
@@ -155,4 +161,36 @@ async function reconnect(
   await ctx.db.patch(sent._id, { conversationId: parent._id, updatedAt: now });
   if (sent.receivedAt > parent.lastMessageAt)
     await ctx.db.patch(parent._id, { lastMessageAt: sent.receivedAt, updatedAt: now });
+}
+
+async function mergeShopifyThread(
+  ctx: MutationCtx,
+  source: Doc<"supportConversations">,
+  target: Doc<"supportConversations">,
+  now: number,
+) {
+  const messages = await ctx.db
+    .query("supportMessages")
+    .withIndex("by_conversationId_and_receivedAt", (q) => q.eq("conversationId", source._id))
+    .take(51);
+  const queued = await ctx.db
+    .query("automaticReplies")
+    .withIndex("by_conversationId_and_status", (q) => q.eq("conversationId", source._id))
+    .first();
+  if (queued || messages.length > 50) return 0;
+  const address = target.customerEmail;
+  const sameCustomer = messages.every(
+    (message) =>
+      message.shopId === target.shopId &&
+      (message.direction === "inbound"
+        ? (shopifyContactAddress(message) ?? message.from.address) === address
+        : [...message.to, ...message.cc].some((contact) => contact.address === address)),
+  );
+  if (!sameCustomer) return 0;
+
+  for (const message of messages)
+    await ctx.db.patch(message._id, { conversationId: target._id, updatedAt: now });
+  if (source.lastMessageAt > target.lastMessageAt)
+    await ctx.db.patch(target._id, { lastMessageAt: source.lastMessageAt, updatedAt: now });
+  return messages.length;
 }
