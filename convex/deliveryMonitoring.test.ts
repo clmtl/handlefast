@@ -27,7 +27,7 @@ const config = {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(Date.parse("2026-10-01T10:00:00Z"));
-  vi.stubEnv("RESEND_API_KEY", "synthetic");
+  vi.stubEnv("RESEND_SHOP_API_KEYS", JSON.stringify({ "fixture.example": "re_fixture" }));
   vi.stubEnv("OPENAI_API_KEY", "synthetic");
   vi.stubGlobal(
     "fetch",

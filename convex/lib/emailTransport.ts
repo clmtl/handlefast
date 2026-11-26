@@ -1,11 +1,13 @@
 import type { EmailPayload } from "./automaticReplyPolicy";
+import { shopResendKey } from "./shopSender";
 
 // Both automatic replies and proactive notices freeze their envelope before calling this transport.
 export async function deliverEmail(
   payload: EmailPayload,
-  key: string,
   idempotencyKey: string,
 ): Promise<{ id: string } | { retryable: boolean; definite: boolean }> {
+  const key = shopResendKey(payload.from);
+  if (!key) return { retryable: false, definite: true };
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
