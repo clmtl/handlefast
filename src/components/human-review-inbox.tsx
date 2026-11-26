@@ -1,59 +1,53 @@
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { BellRing } from "lucide-react";
+import { ChevronRight, ListChecks } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { categories, priorities } from "../../convex/lib/emailClassificationPolicy";
 import { reviewStatuses } from "../../convex/lib/humanReviewPolicy";
-import { EmailReader } from "./inbound-email-settings";
+import { EmailReaderDialog } from "./email-reader-dialog";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
-const button =
-  "rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
 type Status = keyof typeof reviewStatuses;
 
-export function HumanReviewInbox({ shopId }: { shopId: Id<"shops"> }) {
-  const [asOf] = useState(() => Date.now()),
-    [status, setStatus] = useState<Status>("open");
+export function HumanReviewInbox({
+  shopId,
+  initialStatus = "open",
+}: {
+  shopId: Id<"shops">;
+  initialStatus?: Status;
+}) {
+  const [asOf] = useState(Date.now);
+  const [status, setStatus] = useState<Status>(initialStatus);
   const counts = useQuery(api.humanReviews.overview, { shopId, asOf });
   return (
-    <section className="mb-6 rounded-lg border bg-card p-5" aria-label="Demandes à traiter">
-      <div className="flex items-center gap-2">
-        <BellRing className="size-5 text-primary" aria-hidden="true" />
-        <h2 className="text-xl font-semibold">Demandes à traiter</h2>
-      </div>
-      <p
-        role="status"
-        aria-live="polite"
-        className={`mt-3 rounded-md border p-3 text-sm ${counts?.open ? "border-amber-600 bg-amber-50 text-amber-950" : "border-slate-500"}`}
-      >
-        {counts
-          ? `${counts.open}${counts.openMore ? "+" : ""} demande${counts.open !== 1 ? "s" : ""} en attente de votre intervention · ${counts.inProgress}${counts.inProgressMore ? "+" : ""} en cours.`
-          : "Chargement des alertes…"}
-      </p>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Les emails qui nécessitent une validation humaine sont regroupés ici, avec un résumé et une
-        proposition à vérifier. Les anciens emails peuvent être préparés depuis leur lecteur dans la
-        boîte SAV.
-      </p>
-      <fieldset className="my-4 flex flex-wrap gap-2" aria-label="État des demandes">
-        {Object.entries(reviewStatuses).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={
-              status === value
-                ? `${button} bg-primary text-primary-foreground hover:bg-primary/90`
-                : button
-            }
-            aria-pressed={status === value}
-            onClick={() => setStatus(value as Status)}
-          >
-            {label}
-          </button>
-        ))}
-      </fieldset>
-      <ReviewList key={`${shopId}:${status}`} shopId={shopId} status={status} asOf={asOf} />
-    </section>
+    <Card className="gap-0 py-0" aria-label="Demandes à traiter">
+      <Tabs value={status} onValueChange={(value) => setStatus(value as Status)} className="gap-0">
+        <div className="border-b p-4 sm:px-5">
+          <TabsList aria-label="État des demandes">
+            {Object.entries(reviewStatuses).map(([value, label]) => (
+              <TabsTrigger key={value} value={value}>
+                {label}
+                {counts && value !== "resolved" && (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {value === "open"
+                      ? `${counts.open}${counts.openMore ? "+" : ""}`
+                      : `${counts.inProgress}${counts.inProgressMore ? "+" : ""}`}
+                  </span>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        <TabsContent value={status}>
+          <ReviewList key={status} shopId={shopId} status={status} asOf={asOf} />
+        </TabsContent>
+      </Tabs>
+    </Card>
   );
 }
 
@@ -74,68 +68,71 @@ function ReviewList({
   const [selected, setSelected] = useState<Id<"emailReceipts"> | null>(null);
   return (
     <>
-      {selected && (
-        <div className="mb-4">
-          <EmailReader
-            key={selected}
-            receiptId={selected}
-            close={() => setSelected(null)}
-            refreshOrderOnOpen={false}
-          />
-        </div>
-      )}
       {loading === "LoadingFirstPage" ? (
-        <p className="text-sm">Chargement…</p>
+        <div className="space-y-3 p-5">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
       ) : (
         !results.length && (
-          <p className="text-sm text-muted-foreground">Aucune demande dans cet état.</p>
+          <div className="grid justify-items-center gap-2 p-12 text-center">
+            <ListChecks className="size-6 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm text-muted-foreground">Aucune demande dans cette vue.</p>
+          </div>
         )
       )}
       <ul className="divide-y">
         {results.map((item) => (
-          <li key={item.receiptId} className="py-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="break-words font-medium">{item.subject}</h3>
-              {item.priority && (
-                <span
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${item.priority === "urgent" ? "border-red-600 bg-red-50 text-red-900" : item.priority === "high" ? "border-amber-600 bg-amber-50 text-amber-900" : "border-slate-500"}`}
-                >
-                  Importance {priorities[item.priority].toLowerCase()}
-                </span>
-              )}
-            </div>
-            <p className="mt-1 break-all text-sm text-muted-foreground">
-              {item.from} · {new Date(item.receivedAt).toLocaleString()}
-            </p>
-            {item.category && (
-              <p className="mt-2 text-sm font-medium">{categories[item.category]}</p>
-            )}
-            <p className="mt-2 whitespace-pre-wrap break-words text-sm">
-              {item.summary ??
-                (item.pending
-                  ? "Résumé en préparation ; vous pouvez déjà traiter la demande."
-                  : "Ouvrez l’email pour préparer le traitement.")}
-            </p>
+          <li key={item.receiptId}>
             <button
-              className={`${button} mt-3`}
               type="button"
+              className="flex w-full items-center gap-4 p-4 text-left hover:bg-muted/40 sm:px-5"
               onClick={() => setSelected(item.receiptId)}
             >
-              Ouvrir et traiter
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{item.subject}</span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                  {item.from} · {new Date(item.receivedAt).toLocaleDateString("fr-FR")}
+                </span>
+                <span className="mt-1.5 block line-clamp-2 text-sm text-muted-foreground">
+                  {item.summary ??
+                    (item.pending ? "Résumé en préparation…" : "Ouvrir pour traiter la demande.")}
+                </span>
+                <span className="mt-2 flex flex-wrap gap-1.5">
+                  {item.category && <Badge variant="outline">{categories[item.category]}</Badge>}
+                  {item.priority && (
+                    <Badge
+                      variant="secondary"
+                      className={
+                        item.priority === "urgent"
+                          ? "bg-red-50 text-red-800"
+                          : item.priority === "high"
+                            ? "bg-amber-50 text-amber-800"
+                            : undefined
+                      }
+                    >
+                      {priorities[item.priority]}
+                    </Badge>
+                  )}
+                </span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             </button>
           </li>
         ))}
       </ul>
-      {loading === "CanLoadMore" && (
-        <button className={button} type="button" onClick={() => loadMore(20)}>
-          Afficher la suite
-        </button>
+      {(loading === "CanLoadMore" || loading === "LoadingMore") && (
+        <div className="border-t p-4">
+          <Button
+            variant="outline"
+            disabled={loading === "LoadingMore"}
+            onClick={() => loadMore(20)}
+          >
+            Afficher la suite
+          </Button>
+        </div>
       )}
-      {loading === "LoadingMore" && (
-        <p role="status" className="text-sm">
-          Chargement…
-        </p>
-      )}
+      <EmailReaderDialog selected={selected} close={() => setSelected(null)} />
     </>
   );
 }
