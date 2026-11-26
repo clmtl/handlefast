@@ -1,5 +1,14 @@
 # handlefast
 
+## Expéditeur des emails SAV
+
+Après avoir vérifié le domaine expéditeur dans Resend, renseigner
+`VERIFIED_SHOP_SENDERS` sur le backend Convex. Cette variable contient un objet
+JSON qui associe chaque identifiant Convex de boutique à son adresse SAV exacte, par
+exemple `{"shopId":"support@example.com"}`. L’adresse doit aussi être enregistrée
+dans **Réception email**. Un changement d’adresse demande une nouvelle autorisation.
+La confirmation du transfert entrant ne donne aucune permission d’envoi.
+
 ## Test local avec les connexions existantes
 
 `npm ci`, puis `npm run dev:connected` ouvre l’interface sur

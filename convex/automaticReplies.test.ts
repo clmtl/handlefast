@@ -97,6 +97,8 @@ async function fixture(
 ) {
   const t = createBackend(),
     shop = await workspace(t, "automatic");
+  await t.run((ctx) => ctx.db.patch(shop.shopId, { supportEmail: "sav@fixture.example" }));
+  vi.stubEnv("VERIFIED_SHOP_SENDERS", JSON.stringify({ [shop.shopId]: "sav@fixture.example" }));
   const route = await shop.client.query(api.inboundEmailRoutes.getForShop, { shopId: shop.shopId });
   if (!route) throw new Error("Missing route");
   if (options.enabled !== false)
@@ -412,7 +414,24 @@ test("owner approval is required even for queued automatic replies in test mode"
   );
   const claim = await f.t.mutation(internal.automaticReplies.claimSend, { id: queued._id });
   expect(claim?.payload).toMatchObject({ from: target.from, to: [target.to], text: args.text });
+  expect(claim?.payload.from).toBe("sav@fixture.example");
   expect(await f.t.mutation(internal.automaticReplies.claimSend, { id: queued._id })).toBeNull();
+});
+
+test("a queued reply cannot send from an old HandleFast address or a revoked shop address", async () => {
+  const f = await fixture();
+  const queued = await ready(f);
+  const payload = queued.payload;
+  if (!payload) throw new Error("Missing queued payload");
+  await f.t.run((ctx) =>
+    ctx.db.patch(queued._id, { payload: { ...payload, from: f.route.address } }),
+  );
+  expect(await f.t.mutation(internal.automaticReplies.claimSend, { id: queued._id })).toBeNull();
+  expect(await row(f)).toMatchObject({ status: "cancelled", attempts: 0 });
+
+  vi.stubEnv("VERIFIED_SHOP_SENDERS", "{}");
+  const review = await f.shop.client.query(api.humanReviews.get, { receiptId: f.receiptId });
+  expect(review?.sendTarget).toBeNull();
 });
 
 test("adding a shop provisions a separate support identity in the same workspace", async () => {

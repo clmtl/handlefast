@@ -114,6 +114,45 @@ function inboundPayload(
 }
 
 describe("inbound email routing", () => {
+  test("verifies reception on the first ordinary email to the configured support address", async () => {
+    const t = createTestBackend();
+    const workspace = await createWorkspace(t, "ordinary-forward");
+    const { shopId } = workspace;
+    const address = "support@shop.example";
+    await workspace.client.mutation(api.emailInbox.saveSupportAddress, {
+      shopId,
+      supportEmail: address,
+    });
+    const connection = () => workspace.client.query(api.emailInbox.connection, { shopId });
+    const route = (await connection()).address;
+    if (!route) throw new Error("Missing route");
+    await t.mutation(internal.inboundEmails.ingestFromWorker, inboundPayload(route));
+    await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(route, {
+        deliveryKey: "forwarding-confirmation",
+        messageId: "<forwarding-confirmation@gmail.com>",
+        from: { address: "forwarding-noreply@google.com" },
+        to: [{ address }],
+      }),
+    );
+    expect((await connection()).verified).toBe(false);
+    await t.mutation(
+      internal.inboundEmails.ingestFromWorker,
+      inboundPayload(route, {
+        deliveryKey: "ordinary-forward",
+        messageId: "<ordinary-forward@example.com>",
+        to: [{ address }],
+      }),
+    );
+    expect(await connection()).toMatchObject({ verified: true, sendingAddress: null });
+    await workspace.client.mutation(api.emailInbox.saveSupportAddress, {
+      shopId,
+      supportEmail: "new@shop.example",
+    });
+    expect((await connection()).verified).toBe(false);
+  });
+
   test("creates and exposes an inbound email route during onboarding", async () => {
     const t = createTestBackend();
     const workspace = await createWorkspace(t, "inbound-route");

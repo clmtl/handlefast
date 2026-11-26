@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { Copy, Mail, Pause, Play } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { EmailReaderDialog } from "./email-reader-dialog";
@@ -20,7 +20,7 @@ const receiptStatuses: Record<string, string> = {
 export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
   const connection = useQuery(api.emailInbox.connection, { shopId });
   const receipts = useQuery(api.emailInbox.recent, { shopId });
-  const beginTest = useMutation(api.emailInbox.beginTest);
+  const saveSupportAddress = useMutation(api.emailInbox.saveSupportAddress);
   const setEnabled = useMutation(api.emailInbox.setEnabled);
   const retry = useMutation(api.emailInbox.retry);
   const provision = useMutation(api.inboundEmailRoutes.ensureForShop);
@@ -29,17 +29,6 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Id<"emailReceipts"> | null>(null);
-  const testExpiresAt = connection?.testExpiresAt;
-  const [expiredAt, setExpiredAt] = useState(0);
-
-  useEffect(() => {
-    if (!testExpiresAt) return;
-    const timer = window.setTimeout(
-      () => setExpiredAt(testExpiresAt),
-      Math.max(0, testExpiresAt - Date.now()),
-    );
-    return () => window.clearTimeout(timer);
-  }, [testExpiresAt]);
 
   async function perform(task: () => Promise<unknown>, success = "") {
     setError("");
@@ -65,10 +54,22 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
     shopDisabled,
   } = connection;
   const currentEmail = supportEmail ?? savedEmail;
-  const testSubject = connection.testSubject;
-  const testExpired = Boolean(testExpiresAt && testExpiresAt <= expiredAt);
   return (
     <div className="space-y-5">
+      <Card className="gap-2">
+        <CardHeader>
+          <CardTitle className="text-base">Adresse d’envoi</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {connection.sendingAddress ? (
+            <p>{connection.sendingAddress}</p>
+          ) : (
+            <p className="text-muted-foreground">
+              Envoi bloqué tant que l’adresse SAV de la boutique n’est pas autorisée.
+            </p>
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader className="gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -78,11 +79,9 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
                 ? "En pause"
                 : verified
                   ? "Vérifié"
-                  : testSubject && !testExpired
-                    ? "En attente du test"
-                    : address
-                      ? "À vérifier"
-                      : "À configurer"}
+                  : address && savedEmail
+                    ? "En attente d’un e-mail"
+                    : "À configurer"}
             </Badge>
           </div>
         </CardHeader>
@@ -135,8 +134,7 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
                   </p>
                   <p>
                     Si Gmail envoie une confirmation, ouvrez-la dans le journal ci-dessous et
-                    validez le lien avant d’activer le transfert. Envoyez ensuite un test pour
-                    vérifier qu’un email adressé à votre SAV arrive bien dans HandleFast.
+                    validez le lien avant d’activer le transfert.
                   </p>
                   <a
                     className="inline-block text-primary underline"
@@ -151,10 +149,10 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
                       className="space-y-2"
                       onSubmit={(event) => {
                         event.preventDefault();
-                        void perform(
-                          () => beginTest({ shopId, supportEmail: currentEmail }),
-                          "Test prêt. Envoyez un email depuis une autre boîte avec l’objet indiqué.",
-                        );
+                        void perform(async () => {
+                          await saveSupportAddress({ shopId, supportEmail: currentEmail });
+                          setSupportEmail(null);
+                        }, "Adresse SAV enregistrée.");
                       }}
                     >
                       <label className="block font-medium text-foreground" htmlFor="support-email">
@@ -171,53 +169,21 @@ export function InboundEmailSettings({ shopId }: { shopId: Id<"shops"> }) {
                           value={currentEmail}
                           onChange={(event) => setSupportEmail(event.target.value)}
                         />
-                        <Button type="submit" disabled={busy || !enabled}>
-                          Préparer un test
+                        <Button
+                          type="submit"
+                          disabled={busy || shopDisabled || currentEmail === savedEmail}
+                        >
+                          Enregistrer
                         </Button>
                       </div>
                     </form>
                   )}
-                  {testSubject && !verified && enabled && (
-                    <div className="space-y-2 rounded-lg bg-muted p-3">
-                      <p>
-                        Destinataire <strong>{savedEmail}</strong>
-                      </p>
-                      <p className="break-all">
-                        Objet <code>{testSubject}</code>
-                      </p>
-                      <p>
-                        {testExpired
-                          ? "Test expiré. Préparez un nouveau test."
-                          : "Envoyez le test depuis une autre boîte mail. L’objet est valide 30 minutes."}
-                      </p>
-                      {!testExpired && (
-                        <div className="flex flex-wrap gap-2">
-                          <Button asChild size="sm">
-                            <a
-                              href={`mailto:${encodeURIComponent(savedEmail).replace("%40", "@")}?subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent("Bonjour, je vérifie la réception des e-mails SAV de la boutique.")}`}
-                            >
-                              Ouvrir le brouillon de test
-                            </a>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              void perform(
-                                () => navigator.clipboard.writeText(testSubject),
-                                "Objet copié.",
-                              )
-                            }
-                          >
-                            Copier l’objet
-                          </Button>
-                        </div>
-                      )}
-                      <p>
-                        Gmail ne transfère pas les spams. Si le test est dans Spam, cliquez sur «
-                        Non-spam » dans Gmail puis envoyez un nouveau message de test.
-                      </p>
-                    </div>
+                  {savedEmail && !verified && enabled && (
+                    <p>
+                      HandleFast vérifie la réception dès qu’un e-mail ordinaire adressé à{" "}
+                      <strong>{savedEmail}</strong> arrive via le transfert. Vous pouvez attendre un
+                      message ou en envoyer un depuis une autre boîte, avec l’objet de votre choix.
+                    </p>
                   )}
                 </div>
               </details>
