@@ -70,9 +70,11 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
             <div>
               <h2 className="font-semibold">Envoi automatique</h2>
               <p className="text-sm text-muted-foreground">
-                {language
-                  ? "Les réponses utilisent la langue principale de la boutique Shopify."
-                  : "Les envois attendent une langue Shopify prise en charge."}
+                {approvalRequired
+                  ? "Chaque réponse doit être validée avant son envoi."
+                  : language
+                    ? "Les réponses utilisent la langue principale de la boutique Shopify."
+                    : "Les envois attendent une langue Shopify prise en charge."}
               </p>
             </div>
           </div>
@@ -80,13 +82,15 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
             variant="secondary"
             className={active ? "bg-emerald-50 text-emerald-800" : undefined}
           >
-            {active
-              ? "Actif"
-              : !enabled
-                ? "En pause"
-                : !configured
-                  ? "Service indisponible"
-                  : "Langue indisponible"}
+            {approvalRequired
+              ? "Validation manuelle"
+              : active
+                ? "Actif"
+                : !enabled
+                  ? "En pause"
+                  : !configured
+                    ? "Service indisponible"
+                    : "Langue indisponible"}
           </Badge>
         </CardHeader>
         {canManage && !approvalRequired && (
