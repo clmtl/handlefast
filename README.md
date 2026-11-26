@@ -138,10 +138,10 @@ context. It uses cached order/parcel information and the existing backend-only
 
 ## Automatic support replies (feature 7)
 
-Owners/admins can enable replies for explicit category/importance combinations per
-shop. Rules apply to future receipts only; automation starts disabled. GPT-6 Luna
-selects a bounded response type, rendered from French/English/Spanish templates
-using cached facts. Resend sends the reply with stable idempotency; individual
+Untouched shops automatically handle low- and normal-priority order status requests.
+Owners/admins can pause or customize the rules. The preset applies to new receipts. GPT-6 Luna
+selects a bounded response type, rendered using cached facts and reviewed
+French, English, Spanish or German templates in the shop’s primary Shopify language. Resend sends the reply with stable idempotency; individual
 Reply-To aliases preserve conversations across provider Message-ID rewrites.
 Uncertain requests and failed/ambiguous sends return to human handling. The reader
 shows the actual response and provider acceptance status. Uses existing backend
@@ -157,7 +157,8 @@ local daily schedule. Start in simulation to inspect candidates and blockers;
 real sending requires a recent simulation and applies only to new orders after
 activation. One notification per order uses the shared Resend transport and a
 reply alias that creates a human SAV task with the correct cached order.
-Scanning makes no Shopify/17TRACK calls. Notifications use validated templates;
+Scanning makes no Shopify/17TRACK calls. Notifications use validated templates
+in the shop’s primary Shopify language;
 all existing AI processing remains on GPT-6 Luna. See
 [behavior and staging acceptance](docs/proactive-delivery-notifications.md),
 including the Gmail Spam placement observed during the real delivery test.

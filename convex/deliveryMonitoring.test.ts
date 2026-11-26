@@ -22,7 +22,6 @@ const config = {
   calendar: "calendar" as const,
   timezone: "Europe/Paris",
   hour: 9,
-  locale: "fr" as const,
   holidays: [] as string[],
 };
 beforeEach(() => {
@@ -104,6 +103,7 @@ async function fixture(live = false) {
       token: "never-decrypt",
       tokenExpiresAt: Date.now() + 365 * DAY,
       scopes: ["read_orders"],
+      primaryLocale: "fr",
       generation: "g1",
       status: "active",
       nextSyncAt: Date.now() + 365 * DAY,
@@ -161,7 +161,7 @@ async function policy(f: Base) {
       .unique(),
   );
 }
-async function finishScan(f: Base, simulation: boolean) {
+async function finishScan(f: Base, simulation: boolean, scheduled = !simulation) {
   const p = await policy(f);
   if (!p?.scanToken) throw new Error("Missing scan");
   await f.t.mutation(internal.deliveryMonitoring.scanPage, {
@@ -169,6 +169,7 @@ async function finishScan(f: Base, simulation: boolean) {
     token: p.scanToken,
     revision: p.revision,
     simulation,
+    scheduled,
     cursor: null,
   });
 }
@@ -319,6 +320,111 @@ test("default configuration is absent; simulation is the first configured mode a
   });
   expect(list.page[0]).toMatchObject({ simulation: true, reason: "eligible" });
   expect(list.page[0].text).toContain("#QA8001");
+
+  const previous = await policy(f);
+  await f.shop.client.mutation(api.deliveryMonitoring.save, {
+    shopId: f.shop.shopId,
+    mode: "simulation",
+    ...config,
+  });
+  expect(await policy(f)).toMatchObject({
+    scanToken: expect.any(String),
+    revision: previous?.revision,
+    nextRunAt: previous?.nextRunAt,
+  });
+});
+
+test.each([
+  ["es-MX", "Hola", "Información sobre tu pedido"],
+  ["de-DE", "Guten Tag", "Information zur Lieferung Ihrer Bestellung"],
+])("delay previews and outgoing mail follow %s", async (locale, greeting, subject) => {
+  const f = await fixture(true);
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: locale }));
+  await scan(f);
+  const list = await f.shop.client.query(api.deliveryMonitoring.list, {
+    shopId: f.shop.shopId,
+    history: false,
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  expect(list.page[0].text).toContain(greeting);
+
+  await scan(f, false);
+  const queued = await notice(f);
+  expect(queued.payload?.subject).toContain(subject);
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "en" }));
+  expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
+  expect(await notice(f)).toMatchObject({ status: "cancelled", reason: "context_changed" });
+  await scan(f, false);
+  const current = await notice(f);
+  expect(current.payload?.subject).toContain("An update on your order");
+  expect(current.status).toBe("queued");
+});
+
+test("delay notifications wait for a supported shop language", async () => {
+  const f = await fixture();
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: "it-IT" }));
+  await scan(f);
+  expect(await notice(f)).toMatchObject({ status: "none", reason: "shop_language_unavailable" });
+  await expect(
+    f.shop.client.mutation(api.deliveryMonitoring.save, {
+      shopId: f.shop.shopId,
+      mode: "live",
+      ...config,
+      locale: "fr",
+    }),
+  ).rejects.toThrow("ShopLanguageUnavailable");
+});
+
+test("test mode stops both queued and newly detected delay notices until owner approval", async () => {
+  const f = await fixture(true);
+  await scan(f, false);
+  const queued = await notice(f);
+  vi.stubEnv("REQUIRE_EMAIL_APPROVAL", "true");
+  expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
+  expect(await notice(f)).toMatchObject({
+    status: "cancelled",
+    reason: "approval_required",
+    attempts: 0,
+  });
+  await scan(f, false);
+  expect(await notice(f)).toMatchObject({ status: "cancelled", attempts: 0 });
+  const list = await f.shop.client.query(api.deliveryMonitoring.list, {
+    shopId: f.shop.shopId,
+    history: false,
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  const preview = list.page[0];
+  expect(preview.canApprove).toBe(true);
+  const args = { id: queued._id, to: preview.email ?? "", text: preview.text };
+  await expect(
+    f.shop.client.mutation(api.deliveryMonitoring.approve, { ...args, text: "Old" }),
+  ).rejects.toThrow("NotificationChanged");
+  await f.shop.client.mutation(api.deliveryMonitoring.approve, args);
+  expect(
+    await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id }),
+  ).toMatchObject({
+    payload: { to: [args.to], text: args.text },
+  });
+  expect(await f.t.mutation(internal.deliveryMonitoring.claimSend, { id: queued._id })).toBeNull();
+});
+
+test("manual simulation leaves a due live scan available without sending", async () => {
+  const f = await fixture(true);
+  const p = await policy(f);
+  if (!p) throw new Error("Missing policy");
+  const due = Date.now() - 1;
+  await f.t.run((ctx) => ctx.db.patch(p._id, { nextRunAt: due }));
+  await f.shop.client.mutation(api.deliveryMonitoring.simulate, { shopId: f.shop.shopId });
+  expect((await policy(f))?.nextRunAt).toBe(due);
+  await finishScan(f, true);
+  expect((await policy(f))?.nextRunAt).toBe(due);
+  expect(await notice(f)).toMatchObject({ status: "none", evaluatedMode: "simulation" });
+  expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+
+  await f.t.mutation(internal.deliveryMonitoring.recover, {});
+  await finishScan(f, false);
+  expect(await notice(f)).toMatchObject({ status: "queued", evaluatedMode: "live" });
+  expect((await policy(f))?.nextRunAt).toBeGreaterThan(Date.now());
 });
 
 test("live activation requires a completed simulation of unchanged settings and applies only to new orders", async () => {
@@ -530,6 +636,9 @@ test("live sends once per stable Shopify order identity, even after duplicate sc
     attempts: 1,
     providerId: "accepted-notice",
   });
+  const accepted = await notice(f);
+  await scan(f);
+  expect(await notice(f)).toEqual(accepted);
   await scan(f, false);
   await f.t.action(internal.deliveryNotificationProcessing.send, { id: n._id });
   expect(mock).toHaveBeenCalledTimes(1);

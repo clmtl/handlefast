@@ -1,176 +1,243 @@
 import { useMutation, useQuery } from "convex/react";
+import { Bot, Pause, Play, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { autoReplyStatuses, type ReplyRule } from "../../convex/lib/automaticReplyPolicy";
+import {
+  autoReplyStatuses,
+  defaultReplyRules,
+  type ReplyRule,
+} from "../../convex/lib/automaticReplyPolicy";
 import {
   type Category,
   categories,
   type Priority,
   priorities,
 } from "../../convex/lib/emailClassificationPolicy";
+import { supportedEmailLanguage } from "../../convex/lib/shopLanguage";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader } from "./ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { Skeleton } from "./ui/skeleton";
 
 const button =
   "rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
 
 export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
   const settings = useQuery(api.automaticReplySettings.get, { shopId });
+  const shopify = useQuery(api.shopifyConnection.status, { shopId });
   const save = useMutation(api.automaticReplySettings.save);
-  const [editing, setEditing] = useState(false),
-    [enabled, setEnabled] = useState(false),
-    [rules, setRules] = useState<ReplyRule[]>([]);
-  const [busy, setBusy] = useState(false),
-    [feedback, setFeedback] = useState("");
-  if (!settings) return null;
-  const currentRules = editing ? rules : settings.rules;
-  const currentEnabled = editing ? enabled : settings.enabled;
-  function edit() {
-    if (!settings) return;
-    setRules(settings.rules);
-    setEnabled(settings.enabled);
-    setEditing(true);
-    setFeedback("");
-  }
-  function toggle(category: Category, priority: Priority) {
-    setRules(
-      currentRules.some((r) => r.category === category && r.priority === priority)
-        ? currentRules.filter((r) => r.category !== category || r.priority !== priority)
-        : [...currentRules, { category, priority }],
-    );
-  }
-  async function submit() {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<ReplyRule[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  if (!settings || !shopify) return <Skeleton className="h-48 w-full" />;
+  const { enabled, rules, configured, canManage, approvalRequired } = settings;
+  const language = supportedEmailLanguage(shopify?.primaryLocale);
+  const active = !approvalRequired && enabled && configured && Boolean(language);
+  const categoriesWithRules = Object.entries(categories).filter(([category]) =>
+    rules.some((rule) => rule.category === category),
+  );
+  async function submit(nextEnabled: boolean, nextRules: ReplyRule[], close = false) {
     setBusy(true);
-    setFeedback("");
+    setMessage("");
     try {
-      await save({ shopId, enabled, rules });
-      setEditing(false);
-      setFeedback("Règles enregistrées. Elles s’appliquent aux prochains emails reçus.");
+      await save({ shopId, enabled: nextEnabled, rules: nextRules });
+      if (close) setEditing(false);
+      setMessage("Modifications enregistrées.");
     } catch {
-      setFeedback("Enregistrement impossible. Vérifiez les règles et réessayez.");
+      setMessage("Impossible d’enregistrer. Réessaie.");
     } finally {
       setBusy(false);
     }
   }
   return (
-    <section className="rounded-lg border bg-card p-5" aria-label="Réponses automatiques">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Réponses automatiques</h2>
-        <span className="rounded-full border px-3 py-1 text-sm">
-          {settings.enabled ? "Activées" : "Désactivées"}
-        </span>
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Choisissez les catégories et importances autorisées pour les prochains emails. HandleFast
-        peut communiquer un suivi connu, demander les informations manquantes ou accuser réception
-        d’une résolution. Les demandes nécessitant une décision restent à traiter par votre équipe.
-      </p>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Réponses en français, anglais ou espagnol. Aucun remboursement, renvoi ou changement de
-        commande automatique. Une seule tentative de réponse par conversation sur 30 minutes.
-      </p>
-      {!settings.configured && (
-        <p role="status" className="mt-3 text-sm">
-          Le service d’envoi n’est pas encore disponible.
+    <div className="space-y-5">
+      <Card className="gap-4">
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+              <Bot className="size-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="font-semibold">Envoi automatique</h2>
+              <p className="text-sm text-muted-foreground">
+                {language
+                  ? "Les réponses utilisent la langue principale de la boutique Shopify."
+                  : "Les envois attendent une langue Shopify prise en charge."}
+              </p>
+            </div>
+          </div>
+          <Badge
+            variant="secondary"
+            className={active ? "bg-emerald-50 text-emerald-800" : undefined}
+          >
+            {active
+              ? "Actif"
+              : !enabled
+                ? "En pause"
+                : !configured
+                  ? "Service indisponible"
+                  : "Langue indisponible"}
+          </Badge>
+        </CardHeader>
+        {canManage && !approvalRequired && (
+          <CardContent className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || (!enabled && (!configured || !rules.length))}
+              onClick={() => void submit(!enabled, rules)}
+            >
+              {enabled ? (
+                <>
+                  <Pause /> Mettre en pause
+                </>
+              ) : (
+                <>
+                  <Play /> Reprendre
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDraft(rules);
+                setEditing(true);
+              }}
+            >
+              <Settings2 /> Modifier les règles
+            </Button>
+          </CardContent>
+        )}
+      </Card>
+      <Card className="gap-3">
+        <CardHeader>
+          <h2 className="font-semibold">Demandes autorisées</h2>
+        </CardHeader>
+        <CardContent>
+          {categoriesWithRules.length ? (
+            <ul className="divide-y">
+              {categoriesWithRules.map(([category, label]) => (
+                <li
+                  key={category}
+                  className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
+                >
+                  <span className="text-sm font-medium">{label}</span>
+                  <span className="flex flex-wrap gap-1.5">
+                    {rules
+                      .filter((rule) => rule.category === category)
+                      .map((rule) => (
+                        <Badge key={rule.priority} variant="outline">
+                          {priorities[rule.priority]}
+                        </Badge>
+                      ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Aucune règle enregistrée.</p>
+          )}
+        </CardContent>
+      </Card>
+      {message && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {message}
         </p>
       )}
-      {editing && (
-        <label className="mt-4 flex items-center gap-2 text-sm font-medium">
-          <input
-            type="checkbox"
-            checked={currentEnabled}
-            disabled={busy || !settings.configured}
-            onChange={(e) => setEnabled(e.target.checked)}
-          />
-          Activer les réponses automatiques
-        </label>
-      )}
-      <details key={editing ? "edit" : "view"} open={editing} className="mt-4">
-        <summary className="cursor-pointer text-sm font-medium">
-          {currentRules.length}{" "}
-          {currentRules.length > 1 ? "combinaisons autorisées" : "combinaison autorisée"} — afficher
-          les règles
-        </summary>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-sm">
-            <caption className="sr-only">
-              Catégories et importances autorisées pour une réponse automatique
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col" className="p-2 text-left">
-                  Catégorie
-                </th>
-                {Object.entries(priorities).map(([priority, label]) => (
-                  <th scope="col" className="p-2 text-center" key={priority}>
-                    {label}
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogContent className="max-h-[88dvh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Règles d’envoi</DialogTitle>
+            <DialogDescription>Les changements s’appliquent aux nouveaux emails.</DialogDescription>
+          </DialogHeader>
+          <div className="overflow-x-auto">
+            <table className="min-w-96 w-full text-sm">
+              <thead>
+                <tr>
+                  <th scope="col" className="p-2 text-left">
+                    Catégorie
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(categories).map(([category, label]) => (
-                <tr key={category} className="border-t">
-                  <th scope="row" className="p-2 text-left font-normal">
-                    {label}
-                  </th>
-                  {Object.entries(priorities).map(([priority, importance]) => (
-                    <td key={priority} className="p-2 text-center">
-                      <input
-                        type="checkbox"
-                        aria-label={`${label} — ${importance}`}
-                        checked={currentRules.some(
-                          (r) => r.category === category && r.priority === priority,
-                        )}
-                        disabled={!editing || busy}
-                        onChange={() => toggle(category as Category, priority as Priority)}
-                      />
-                    </td>
+                  {Object.entries(priorities).map(([priority, label]) => (
+                    <th key={priority} scope="col" className="p-2 text-center">
+                      {label}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-      {settings.canManage && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {editing ? (
-            <>
-              <button
-                type="button"
-                className={button}
-                disabled={busy || (enabled && !rules.length)}
-                onClick={() => void submit()}
-              >
-                Enregistrer
-              </button>
-              <button
-                type="button"
-                className={button}
-                disabled={busy}
-                onClick={() => setEditing(false)}
-              >
-                Annuler
-              </button>
-            </>
-          ) : (
-            <button type="button" className={button} onClick={edit}>
-              Configurer les règles
-            </button>
+              </thead>
+              <tbody>
+                {Object.entries(categories).map(([category, label]) => (
+                  <tr key={category} className="border-t">
+                    <th scope="row" className="p-2 text-left font-medium">
+                      {label}
+                    </th>
+                    {Object.entries(priorities).map(([priority, importance]) => {
+                      const checked = draft.some(
+                        (rule) => rule.category === category && rule.priority === priority,
+                      );
+                      return (
+                        <td key={priority} className="p-2 text-center">
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-primary"
+                            aria-label={`${label} · ${importance}`}
+                            checked={checked}
+                            disabled={busy}
+                            onChange={() =>
+                              setDraft((current) =>
+                                checked
+                                  ? current.filter(
+                                      (rule) =>
+                                        rule.category !== category || rule.priority !== priority,
+                                    )
+                                  : [
+                                      ...current,
+                                      {
+                                        category: category as Category,
+                                        priority: priority as Priority,
+                                      },
+                                    ],
+                              )
+                            }
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {message && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {message}
+            </p>
           )}
-        </div>
-      )}
-      {!settings.canManage && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Les propriétaires et administrateurs peuvent modifier ces règles.
-        </p>
-      )}
-      {feedback && (
-        <p role="status" className="mt-3 text-sm">
-          {feedback}
-        </p>
-      )}
-    </section>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={() => setDraft(defaultReplyRules)}>
+              Règles par défaut
+            </Button>
+            <Button
+              type="button"
+              disabled={busy || (enabled && (!draft.length || !configured))}
+              onClick={() => void submit(enabled, draft, true)}
+            >
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -196,7 +263,7 @@ export function AutomaticReplyPanel({ receiptId }: { receiptId: Id<"emailReceipt
       className="mt-4 rounded-lg border border-blue-600 bg-blue-50/30 p-4"
       aria-label="Réponse automatique"
     >
-      <h3 className="font-semibold">Réponse automatique</h3>
+      <h3 className="font-semibold">{reply.manual ? "Réponse validée" : "Réponse automatique"}</h3>
       <p role="status" className="mt-2 text-sm">
         {autoReplyStatuses[reply.status]}
         {reply.sentAt ? ` · ${new Date(reply.sentAt).toLocaleString("fr-FR")}` : ""}

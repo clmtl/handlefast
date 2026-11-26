@@ -24,7 +24,11 @@ function Callback() {
       .then((shopId) => {
         if (disposed) return;
         sessionStorage.removeItem(`handlefast:shopify-guided:${shopId}`);
-        void navigate({ to: "/dashboard", replace: true });
+        void navigate({
+          to: "/dashboard",
+          search: { shop: shopId, view: "shopify" },
+          replace: true,
+        });
       })
       .catch(() => {
         if (!disposed) setError(true);

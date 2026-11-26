@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { verifyWebhookSignature } from "../convex/lib/webhookSignatures";
 import { MAX_EMAIL_BYTES, RAW_EMAIL_CONTENT_TYPE } from "../convex/lib/emailPolicy";
+import { verifyWebhookSignature } from "../convex/lib/webhookSignatures";
+
 vi.mock("@sentry/cloudflare", () => ({
   withSentry: (_options: unknown, handler: unknown) => handler,
 }));
 vi.mock("@tanstack/react-start/server-entry", () => ({ default: { fetch: vi.fn() } }));
+
 import worker from "./server";
+
 const workerEnv = {
   CONVEX_SITE_URL: "https://example.convex.site",
   CLOUDFLARE_EMAIL_WEBHOOK_SECRET: "worker-test-secret",
@@ -64,6 +67,27 @@ describe("durable Worker upload", () => {
       storageId: "file",
     });
   });
+  test("sends production aliases only to the production backend", async () => {
+    const request = vi.fn().mockResolvedValue(json({ status: "accepted" }));
+    vi.stubGlobal("fetch", request);
+    const email = { ...message(), to: "hf_prod_reply_token@handlefast.io" };
+    await worker.email(email, {
+      ...workerEnv,
+      PRODUCTION_CONVEX_SITE_URL: "https://production.convex.site",
+      PRODUCTION_EMAIL_WEBHOOK_SECRET: "production-test-secret",
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    const [url, options] = request.mock.calls[0];
+    expect(url.origin).toBe("https://production.convex.site");
+    expect(
+      await verifyWebhookSignature(
+        new Headers(options.headers),
+        options.body,
+        "production-test-secret",
+      ),
+    ).toEqual({ ok: true });
+  });
+
   test("deduplicates a previously stored original without re-uploading", async () => {
     const request = vi.fn().mockResolvedValue(json({ status: "accepted", receiptId: "receipt" }));
     vi.stubGlobal("fetch", request);

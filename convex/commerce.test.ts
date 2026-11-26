@@ -440,11 +440,13 @@ describe("shipment updates", () => {
           JSON.stringify(
             url.endsWith("/oauth/access_token")
               ? { access_token: "renewed-token", expires_in: 86400, scope: "read_orders" }
-              : {
-                  data: {
-                    orders: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+              : url.endsWith("shop.json?fields=primary_locale")
+                ? { shop: { primary_locale: "es-mx" } }
+                : {
+                    data: {
+                      orders: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                    },
                   },
-                },
           ),
         ),
     );
@@ -461,7 +463,8 @@ describe("shipment updates", () => {
     expect(await decrypt(updated?.token ?? "", `shopify:${w.shopId}`)).toBe("renewed-token");
     expect(updated?.syncedAt).toBe(Date.now());
     expect(updated?.syncLease).toBeUndefined();
-    expect(calls).toHaveBeenCalledTimes(2);
+    expect(updated?.primaryLocale).toBe("es-MX");
+    expect(calls).toHaveBeenCalledTimes(3);
   });
   test("persists generic provider errors and schedules retry without leaking response data", async () => {
     const t = backend(),

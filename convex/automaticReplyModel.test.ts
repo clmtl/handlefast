@@ -24,7 +24,6 @@ test("automatic reply planning always requests gpt-6-luna, strict bounded output
               type: "output_text",
               text: JSON.stringify({
                 intent: "reference",
-                language: "fr",
                 confidence: 0.95,
               }),
               annotations: [],
@@ -42,7 +41,7 @@ test("automatic reply planning always requests gpt-6-luna, strict bounded output
     "Untrusted email content",
     "receipt",
   );
-  expect(result).toMatchObject({ intent: "reference", language: "fr", confidence: 0.95 });
+  expect(result).toMatchObject({ intent: "reference", confidence: 0.95 });
   expect(request).toMatchObject({
     model: "gpt-6-luna",
     reasoning: { effort: "low" },

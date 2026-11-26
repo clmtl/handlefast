@@ -3,19 +3,25 @@ import { emailPayload } from "./automaticReplyPolicy";
 
 export const deliveryMode = v.union(v.literal("off"), v.literal("simulation"), v.literal("live"));
 export const deliveryCalendar = v.union(v.literal("calendar"), v.literal("business"));
-export const deliveryLocale = v.union(v.literal("fr"), v.literal("en"), v.literal("es"));
+export const deliveryLocale = v.union(
+  v.literal("fr"),
+  v.literal("en"),
+  v.literal("es"),
+  v.literal("de"),
+);
 export const promiseFields = {
   maxDays: v.number(),
   calendar: deliveryCalendar,
   timezone: v.string(),
   holidays: v.array(v.string()),
 };
-export const deliveryConfig = { ...promiseFields, hour: v.number(), locale: deliveryLocale };
+export const deliveryConfig = { ...promiseFields, hour: v.number() };
+export const storedDeliveryConfig = { ...deliveryConfig, locale: v.optional(deliveryLocale) };
 export type DeliveryConfig = Infer<typeof configValidator>;
 export const configValidator = v.object(deliveryConfig);
 export const policyFields = {
   shopId: v.id("shops"),
-  ...deliveryConfig,
+  ...storedDeliveryConfig,
   mode: deliveryMode,
   revision: v.number(),
   versionId: v.id("deliveryPolicyVersions"),
@@ -29,7 +35,11 @@ export const policyFields = {
   lastSimulationAt: v.optional(v.number()),
   simulatedVersionId: v.optional(v.id("deliveryPolicyVersions")),
 };
-export const versionFields = { shopId: v.id("shops"), ...deliveryConfig, effectiveAt: v.number() };
+export const versionFields = {
+  shopId: v.id("shops"),
+  ...storedDeliveryConfig,
+  effectiveAt: v.number(),
+};
 export const deliveryReasons = {
   not_due: "Délai non dépassé",
   eligible: "Notification possible",
@@ -44,12 +54,14 @@ export const deliveryReasons = {
   disconnected: "Connexion Shopify indisponible",
   reception: "Réception SAV indisponible",
   recipient: "Adresse du client absente ou invalide",
+  shop_language_unavailable: "Langue de la boutique indisponible pour l’envoi",
   contacted: "Client déjà en contact pour cette commande",
   ambiguous_contact: "Contact client sans commande identifiable",
   pending_email: "Email entrant encore à traiter",
   policy_changed: "Configuration modifiée",
   context_changed: "Informations de commande modifiées",
   expired: "Envoi expiré",
+  approval_required: "Validation manuelle requise",
   provider_rejected: "Service d’envoi en échec",
   delivery_unknown: "Envoi incertain : vérifier avant de répondre",
   provider_retry: "Nouvelle vérification de l’envoi prévue",
@@ -98,6 +110,7 @@ export const noticeFields = {
   createdAt: v.number(),
   updatedAt: v.number(),
   attempts: v.number(),
+  approvedBy: v.optional(v.id("profiles")),
   revision: v.optional(v.number()),
   nextAttemptAt: v.optional(v.number()),
   token: v.optional(v.string()),
@@ -226,6 +239,17 @@ export function delayEmail(
     es: {
       subject: `Información sobre tu pedido ${order}`,
       text: `Hola:\n\nEl plazo de entrega anunciado para tu pedido ${order} ha pasado y nuestra última información todavía no confirma su entrega completa. Sentimos la espera.\n\nQueríamos informarte sin esperar a que nos contactaras. Puedes responder directamente a este correo para contactar con nuestro equipo.\n\nUn saludo,\n${shop}`,
+    },
+    de: {
+      subject: `Information zur Lieferung Ihrer Bestellung ${order}`,
+      text: `Guten Tag,
+
+die angekündigte Lieferfrist für Ihre Bestellung ${order} ist abgelaufen. Nach unserem aktuellen Stand ist die vollständige Zustellung noch nicht bestätigt. Wir entschuldigen uns für die Wartezeit.
+
+Wir möchten Sie frühzeitig darüber informieren. Wenn Sie Fragen haben, können Sie direkt auf diese E-Mail antworten.
+
+Mit freundlichen Grüßen
+${shop}`,
     },
   };
   return copy[locale];

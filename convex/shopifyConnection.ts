@@ -17,6 +17,7 @@ export const status = query({
   returns: v.object({
     domain: v.union(v.string(), v.null()),
     connected: v.boolean(),
+    primaryLocale: v.union(v.string(), v.null()),
     canManage: v.boolean(),
     canRefresh: v.boolean(),
     syncedAt: v.union(v.number(), v.null()),
@@ -34,6 +35,7 @@ export const status = query({
     return {
       domain: row?.domain ?? null,
       connected: row?.status === "active",
+      primaryLocale: row?.status === "active" ? (row.primaryLocale ?? null) : null,
       canManage: ["owner", "admin"].includes(membership.role),
       canRefresh: membership.role !== "viewer",
       syncedAt: row?.syncedAt ?? null,

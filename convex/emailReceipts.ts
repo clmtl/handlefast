@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { effectiveReplyPolicy } from "./lib/automaticReplyPolicy";
 import {
   emailExpiresAt,
   MAX_EMAIL_BYTES,
@@ -58,6 +59,11 @@ export const reserve = internalMutation({
         uploadUrl: await ctx.storage.generateUploadUrl(),
       };
     }
+    const settings = await ctx.db
+      .query("shopSettings")
+      .withIndex("by_shopId", (q) => q.eq("shopId", shop._id))
+      .unique();
+    const policy = effectiveReplyPolicy(settings);
     const receiptId = await ctx.db.insert("emailReceipts", {
       ...args,
       envelopeTo,
@@ -66,6 +72,10 @@ export const reserve = internalMutation({
       shopId: shop._id,
       routeId: route._id,
       organizationId: shop.organizationId,
+      autoReplyEligibility: {
+        revision: policy.revision,
+        eligible: policy.enabled && policy.rules.length > 0,
+      },
       status: "uploading",
       receivedAt: now,
       expiresAt: emailExpiresAt(now),

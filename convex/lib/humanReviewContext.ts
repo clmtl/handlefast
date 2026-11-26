@@ -1,8 +1,9 @@
 import type { Doc } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { env, type MutationCtx, type QueryCtx } from "../_generated/server";
 import { cachedOrderContext } from "../orderContext";
-import { matchesRule } from "./automaticReplyPolicy";
+import { effectiveReplyPolicy, matchesRule } from "./automaticReplyPolicy";
 import { type ReviewWarning, replyBlockReason } from "./humanReviewPolicy";
+import { shopLocale, supportedEmailLanguage } from "./shopLanguage";
 
 export async function humanReviewContext(
   ctx: MutationCtx | QueryCtx,
@@ -77,16 +78,25 @@ export async function humanReviewContext(
     .query("automaticReplies")
     .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
     .unique();
-  const reason =
+  const policy = effectiveReplyPolicy(settings);
+  const ruleReason =
     automatic && ["failed", "uncertain", "cancelled"].includes(automatic.status)
       ? ("automatic_unavailable" as const)
       : replyBlockReason(
-          settings?.autoReplyEnabled ?? false,
+          env.REQUIRE_EMAIL_APPROVAL !== "true" &&
+            policy.enabled &&
+            (!policy.preset || Boolean(receipt.autoReplyEligibility?.eligible)),
           receipt.classification,
-          matchesRule(settings?.autoReplyRules, receipt.classification),
+          matchesRule(policy.rules, receipt.classification),
         );
+  const replyLocale = await shopLocale(ctx, receipt.shopId);
+  const reason =
+    ruleReason === "automatic_rule" && !supportedEmailLanguage(replyLocale)
+      ? "automatic_unavailable"
+      : ruleReason;
   // Capture only the chosen order, never broad candidates or private delivery addresses.
   const prompt = JSON.stringify({
+    replyLocale,
     email: { subject: message?.subject?.slice(0, 500) ?? "", body: body.slice(0, 6000), previous },
     classification: receipt.classification
       ? {
@@ -118,6 +128,7 @@ export async function humanReviewContext(
     warnings,
   });
   const contextKey = JSON.stringify({
+    replyLocale,
     classification: receipt.classification ?? null,
     classificationUpdatedAt: receipt.classificationUpdatedAt ?? null,
     reason,
@@ -138,6 +149,7 @@ export async function humanReviewContext(
   return {
     prompt,
     contextKey,
+    replyLocale,
     reason,
     warnings,
     empty: !body,

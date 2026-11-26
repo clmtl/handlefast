@@ -1,6 +1,6 @@
 # Human support assistance (feature 6)
 
-SAV emails that cannot receive an automatic reply now create a visible **Demandes à traiter** alert. Each email has a French summary, a suggested course of action, a draft in the customer's language and a list of facts to verify. Staff can edit/save/copy the draft and move the email through **À traiter → En cours → Traité**, with an explicit reopen action. The acting profile and timestamps are recorded server-side.
+SAV emails that cannot receive an automatic reply now create a visible **Demandes à traiter** alert. Each email has a French summary, a suggested course of action, a draft in the shop’s primary Shopify language (once known) and a list of facts to verify. Staff can edit/save/copy the draft and move the email through **À traiter → En cours → Traité**, with an explicit reopen action. The acting profile and timestamps are recorded server-side.
 
 ## Reply permission and workflow
 

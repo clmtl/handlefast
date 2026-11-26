@@ -25,6 +25,14 @@
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
 }
 
 :root {
@@ -47,6 +55,14 @@
   --border: oklch(0.86 0.016 260);
   --input: oklch(0.86 0.016 260);
   --ring: oklch(0.54 0.12 175);
+  --sidebar: hsl(0 0% 98%);
+  --sidebar-foreground: hsl(240 5.3% 26.1%);
+  --sidebar-primary: hsl(240 5.9% 10%);
+  --sidebar-primary-foreground: hsl(0 0% 98%);
+  --sidebar-accent: hsl(240 4.8% 95.9%);
+  --sidebar-accent-foreground: hsl(240 5.9% 10%);
+  --sidebar-border: hsl(220 13% 91%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 
 .dark {
@@ -68,6 +84,14 @@
   --border: oklch(0.31 0.018 260);
   --input: oklch(0.31 0.018 260);
   --ring: oklch(0.7 0.13 170);
+  --sidebar: hsl(240 5.9% 10%);
+  --sidebar-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 
 @layer base {
@@ -80,4 +104,34 @@
     font-family:
       Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
+}
+
+.hf-dashboard,
+body:has(.hf-dashboard) {
+  --background: #f7f8fc;
+  --foreground: #182033;
+  --card: #fff;
+  --card-foreground: #182033;
+  --popover: #fff;
+  --popover-foreground: #182033;
+  --primary: #5145cb;
+  --primary-foreground: #fff;
+  --muted: #eef0f6;
+  --muted-foreground: #566176;
+  --secondary: #eef0f6;
+  --secondary-foreground: #354258;
+  --accent: #ece9ff;
+  --accent-foreground: #3d31a3;
+  --border: #dfe3ed;
+  --input: #cdd4e2;
+  --ring: #6558dd;
+  --sidebar: #fff;
+  --sidebar-foreground: #3d485e;
+  --sidebar-accent: #eeeaff;
+  --sidebar-accent-foreground: #3d31a3;
+  --sidebar-primary: #5145cb;
+  --sidebar-primary-foreground: #fff;
+  --sidebar-border: #dfe3ed;
+  --sidebar-ring: #6558dd;
+  --radius: 0.75rem;
 }

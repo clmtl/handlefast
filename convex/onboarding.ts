@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation } from "./_generated/server";
 import { getProfileByAuthUserId, requireAuthContext } from "./lib/authorization";
@@ -98,48 +99,65 @@ export const bootstrap = mutation({
       updatedAt: now,
     });
 
-    const shopName = args.shopName?.trim() || "Primary shop";
-    const shopId = await ctx.db.insert("shops", {
+    const { shopId, inboundEmailRouteId } = await createShop(
+      ctx,
       organizationId,
-      name: shopName,
-      slug: slugify(shopName),
-      platform: "manual",
-      status: "setup",
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("shopSettings", {
-      organizationId,
-      shopId,
-      locale: "en",
-      timezone: "UTC",
-      autoReplyEnabled: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const shop = await ctx.db.get(shopId);
-
-    if (!shop) {
-      throw new Error("Failed to create shop");
-    }
-
-    const inboundEmailRoute = await ensureInboundEmailRouteForShop(ctx, shop, now);
-
-    if (!inboundEmailRoute) {
-      throw new Error("Failed to create inbound email route");
-    }
+      args.shopName?.trim() || "Primary shop",
+    );
 
     return {
       profileId: profile._id,
       organizationId,
       shopId,
-      inboundEmailRouteId: inboundEmailRoute._id,
+      inboundEmailRouteId,
       created: true,
     };
   },
 });
+
+export async function createShop(
+  ctx: MutationCtx,
+  organizationId: Id<"organizations">,
+  name: string,
+) {
+  const baseSlug = slugify(name);
+  let slug = baseSlug;
+  for (let suffix = 2; ; suffix += 1) {
+    const existing = await ctx.db
+      .query("shops")
+      .withIndex("by_organizationId_and_slug", (q) =>
+        q.eq("organizationId", organizationId).eq("slug", slug),
+      )
+      .unique();
+    if (!existing) break;
+    if (suffix > 20) throw new Error("ShopNameUnavailable");
+    slug = `${baseSlug}-${suffix}`;
+  }
+  const now = Date.now();
+  const shopId = await ctx.db.insert("shops", {
+    organizationId,
+    name,
+    slug,
+    platform: "manual",
+    status: "setup",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.insert("shopSettings", {
+    organizationId,
+    shopId,
+    locale: "en",
+    timezone: "UTC",
+    autoReplyEnabled: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const shop = await ctx.db.get(shopId);
+  if (!shop) throw new Error("ShopNotFound");
+  const route = await ensureInboundEmailRouteForShop(ctx, shop, now);
+  if (!route) throw new Error("InboundEmailRouteUnavailable");
+  return { shopId, inboundEmailRouteId: route._id };
+}
 
 async function getAvailableOrganizationSlug(ctx: MutationCtx, organizationName: string) {
   const baseSlug = slugify(organizationName);

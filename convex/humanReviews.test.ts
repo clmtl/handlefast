@@ -96,12 +96,31 @@ async function fixture(
   bucket: "sav" | "review" | "other" = "sav",
   ready = true,
   text = "Bonjour, ma commande #SYNTHETIC1001 est en retard. Pouvez-vous vérifier ?",
+  primaryLocale = "fr",
 ) {
   const t = createBackend(),
     shop = await workspace(t, "review");
   const route = await shop.client.query(api.inboundEmailRoutes.getForShop, { shopId: shop.shopId });
   if (!route) throw new Error("Missing route");
   const now = Date.now();
+  const connectionId = await t.run((ctx) =>
+    ctx.db.insert("shopifyConnections", {
+      shopId: shop.shopId,
+      organizationId: shop.organizationId,
+      domain: "fixture.myshopify.com",
+      shopifyShopId: "gid://shopify/Shop/1",
+      clientId: "test",
+      secret: "never-decrypted",
+      token: "never-decrypted",
+      tokenExpiresAt: now + 86400000,
+      scopes: ["read_orders"],
+      primaryLocale,
+      generation: "g1",
+      status: "active",
+      nextSyncAt: now + 86400000,
+      createdAt: now,
+    }),
+  );
   const receiptId = await t.run((ctx) =>
     ctx.db.insert("emailReceipts", {
       organizationId: shop.organizationId,
@@ -150,26 +169,20 @@ async function fixture(
       classification,
     });
   const receipt = await t.run((ctx) => ctx.db.get(receiptId));
-  return { t, shop, route, receiptId, initial, token: receipt?.humanReview?.job?.token ?? "" };
+  return {
+    t,
+    shop,
+    route,
+    receiptId,
+    initial,
+    connectionId,
+    token: receipt?.humanReview?.job?.token ?? "",
+  };
 }
 async function seedOrder(f: Awaited<ReturnType<typeof fixture>>, email = "client@example.com") {
   const now = Date.now();
   return f.t.run(async (ctx) => {
-    const connectionId = await ctx.db.insert("shopifyConnections", {
-      shopId: f.shop.shopId,
-      organizationId: f.shop.organizationId,
-      domain: "fixture.myshopify.com",
-      shopifyShopId: "gid://shopify/Shop/1",
-      clientId: "test",
-      secret: "never-decrypted",
-      token: "never-decrypted",
-      tokenExpiresAt: now + 86400000,
-      scopes: ["read_orders"],
-      generation: "g1",
-      status: "active",
-      nextSyncAt: now + 86400000,
-      createdAt: now,
-    });
+    const connectionId = f.connectionId;
     const orderId = await ctx.db.insert("shopifyOrders", {
       shopId: f.shop.shopId,
       organizationId: f.shop.organizationId,
@@ -253,6 +266,19 @@ test("creates a visible alert before AI/classification and hands off after class
   expect(model).toHaveBeenCalledTimes(1);
   expect((await current(f))?.humanReview).toMatchObject({ status: "open", proposal });
   expect(await f.t.run((ctx) => ctx.db.query("supportMessages").take(10))).toHaveLength(1);
+});
+
+test("human support prompts use the shop locale and suppress drafts until it is known", async () => {
+  const f = await fixture("sav", true, "Where is my order?", "es-MX");
+  const input = await context(f);
+  expect(JSON.parse(input.prompt)).toMatchObject({ replyLocale: "es-MX" });
+
+  await f.t.run((ctx) => ctx.db.patch(f.connectionId, { primaryLocale: undefined }));
+  await f.t.action(internal.humanReviewProcessing.process, {
+    receiptId: f.receiptId,
+    token: f.token,
+  });
+  expect((await current(f))?.humanReview?.proposal).toMatchObject({ draftReply: "" });
 });
 
 test("the enable flag never grants a reply without an authorized rule", () => {

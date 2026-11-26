@@ -15,7 +15,13 @@ export async function uploadIncomingEmail(
     message.setReject("Email exceeds the 25 MiB limit, including attachments.");
     return;
   }
-  if (!env.CONVEX_SITE_URL || !env.CLOUDFLARE_EMAIL_WEBHOOK_SECRET)
+  // The shared receiving worker selects the deployment before reading the email.
+  const production = message.to.toLowerCase().startsWith("hf_prod_");
+  const site = production ? env.PRODUCTION_CONVEX_SITE_URL : env.CONVEX_SITE_URL;
+  const secret = production
+    ? env.PRODUCTION_EMAIL_WEBHOOK_SECRET
+    : env.CLOUDFLARE_EMAIL_WEBHOOK_SECRET;
+  if (!site || !secret)
     throw new Error("Cloudflare email routing is missing Convex webhook configuration.");
   const raw = await new Response(message.raw).arrayBuffer();
   if (raw.byteLength > MAX_EMAIL_BYTES) {
@@ -24,7 +30,7 @@ export async function uploadIncomingEmail(
   }
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", raw));
   const sha256 = btoa(String.fromCharCode(...hash));
-  const reserved = await signedRequest(env, "reserve", {
+  const reserved = await signedRequest(site, secret, "reserve", {
     envelopeFrom: message.from,
     envelopeTo: message.to,
     rawSize: raw.byteLength,
@@ -56,7 +62,7 @@ export async function uploadIncomingEmail(
     typeof result.storageId !== "string"
   )
     throw new Error("Invalid email upload result");
-  const completed = await signedRequest(env, "complete", {
+  const completed = await signedRequest(site, secret, "complete", {
     receiptId: reserved.receiptId,
     storageId: result.storageId,
   });
@@ -64,26 +70,21 @@ export async function uploadIncomingEmail(
 }
 
 async function signedRequest(
-  env: Env,
+  site: string,
+  secret: string,
   operation: "reserve" | "complete",
   payload: unknown,
 ): Promise<Record<string, unknown>> {
-  if (!env.CONVEX_SITE_URL || !env.CLOUDFLARE_EMAIL_WEBHOOK_SECRET)
-    throw new Error("Missing email configuration");
   const body = JSON.stringify({ operation, ...(payload as Record<string, unknown>) });
   const timestamp = String(Date.now());
-  const response = await fetch(new URL("/webhooks/cloudflare/email-routing", env.CONVEX_SITE_URL), {
+  const response = await fetch(new URL("/webhooks/cloudflare/email-routing", site), {
     method: "POST",
     body,
     signal: AbortSignal.timeout(30_000),
     headers: {
       "Content-Type": "application/json",
       "x-handlefast-timestamp": timestamp,
-      "x-handlefast-signature": await signEmailWebhookBody(
-        env.CLOUDFLARE_EMAIL_WEBHOOK_SECRET,
-        timestamp,
-        body,
-      ),
+      "x-handlefast-signature": await signEmailWebhookBody(secret, timestamp, body),
     },
   });
   if (!response.ok) throw new Error(`Convex email ingestion failed: ${response.status}`);

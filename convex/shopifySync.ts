@@ -7,6 +7,7 @@ import { requireShopMembership } from "./lib/authorization";
 import { orderData } from "./lib/commerceModel";
 import {
   exchangeCredentials,
+  fetchShopLocale,
   ORDERS_QUERY,
   parseOrders,
   shopifyGraphql,
@@ -129,10 +130,16 @@ export const page = internalAction({
           after: args.cursor,
         }),
       );
+      // A temporarily unavailable language must not interrupt order synchronization.
+      const primaryLocale =
+        args.cursor === null
+          ? await fetchShopLocale(row.domain, token).catch(() => null)
+          : undefined;
       const { attempt: _, ...pageArgs } = args;
       await ctx.runMutation(internal.shopifySync.savePage, {
         ...pageArgs,
         orders: result.orders,
+        primaryLocale,
         nextCursor: result.hasNextPage ? result.endCursor : null,
       });
     } catch (error) {
@@ -189,6 +196,7 @@ export const savePage = internalMutation({
     since: v.number(),
     startedAt: v.number(),
     orders: v.array(orderData),
+    primaryLocale: v.optional(v.union(v.string(), v.null())),
     nextCursor: v.union(v.string(), v.null()),
   },
   returns: v.null(),
@@ -200,6 +208,8 @@ export const savePage = internalMutation({
       row.syncLease !== args.lease
     )
       return null;
+    if (args.primaryLocale !== undefined)
+      await ctx.db.patch(row._id, { primaryLocale: args.primaryLocale ?? undefined });
     for (const order of args.orders)
       if (order.placedAt >= Date.now() - 365 * 86_400_000) await persistOrder(ctx, row, order);
     if (args.nextCursor) {

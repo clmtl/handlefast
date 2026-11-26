@@ -23,7 +23,6 @@ export async function planAutomaticReply(
       prompt,
       schema: z.object({
         intent: z.enum(["tracking", "reference", "details", "resolved", "handoff"]),
-        language: z.enum(["fr", "en", "es", "other"]),
         confidence: z.number().min(0).max(1),
       }),
       maxOutputTokens: 1024,

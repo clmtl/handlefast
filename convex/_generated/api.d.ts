@@ -51,6 +51,8 @@ import type * as lib_humanReviewModel from "../lib/humanReviewModel.js";
 import type * as lib_humanReviewPolicy from "../lib/humanReviewPolicy.js";
 import type * as lib_inboundEmailRoutes from "../lib/inboundEmailRoutes.js";
 import type * as lib_localTesting from "../lib/localTesting.js";
+import type * as lib_manualReply from "../lib/manualReply.js";
+import type * as lib_shopLanguage from "../lib/shopLanguage.js";
 import type * as lib_shopifyGuidedClient from "../lib/shopifyGuidedClient.js";
 import type * as lib_shopifyGuidedModel from "../lib/shopifyGuidedModel.js";
 import type * as lib_shopifyOAuth from "../lib/shopifyOAuth.js";
@@ -118,6 +120,8 @@ declare const fullApi: ApiFromModules<{
   "lib/humanReviewPolicy": typeof lib_humanReviewPolicy;
   "lib/inboundEmailRoutes": typeof lib_inboundEmailRoutes;
   "lib/localTesting": typeof lib_localTesting;
+  "lib/manualReply": typeof lib_manualReply;
+  "lib/shopLanguage": typeof lib_shopLanguage;
   "lib/shopifyGuidedClient": typeof lib_shopifyGuidedClient;
   "lib/shopifyGuidedModel": typeof lib_shopifyGuidedModel;
   "lib/shopifyOAuth": typeof lib_shopifyOAuth;

@@ -1,6 +1,6 @@
 # Proactive delivery notifications (feature 8, V1)
 
-The dashboard's **Surveillance des retards** checks cached orders against a shop's promised maximum delivery timeframe, including preparation. Configuration starts in **simulation**, without automatic initialization of a merchant's actual delivery promise. Owners/admins choose 1–90 calendar/business days, an IANA timezone, a daily local hour, a notification language (French/English/Spanish), and up to 80 explicit closed/holiday dates. Business days are Monday–Friday; no national holiday calendar is silently assumed.
+The dashboard's **Surveillance des retards** checks cached orders against a shop's promised maximum delivery timeframe, including preparation. Configuration starts in **simulation**, without automatic initialization of a merchant's actual delivery promise. Owners/admins choose 1–90 calendar/business days, an IANA timezone, a daily local hour and up to 80 explicit closed/holiday dates. Notifications use the primary language synchronized from Shopify. French, English, Spanish and German templates cover regional variants. An unknown or unsupported language blocks sending. Business days are Monday–Friday; no national holiday calendar is silently assumed.
 
 ## Deadlines, simulation and activation
 
@@ -8,7 +8,7 @@ A deadline is the end of the final promised local calendar day, counting from th
 
 Policy versions have effective timestamps. A promise is recorded per stable shop/Shopify order GID and retains its original deadline when settings change or the cached order is replaced. Orders preceding the first known rules can be simulated using current settings, clearly marked as indicative. They cannot be emailed retrospectively.
 
-Real sending requires a completed simulation of the same configuration within 24 hours, active Shopify/reception and configured email service. Activation starts a new scope containing only orders placed after activation; switching off and on starts a new scope. Saving settings and **Simuler maintenant** always perform a simulation, even when the daily automatic mode is live. Changing rules requires another simulation before live activation. Simulation never queues a new notification or calls Resend.
+Real sending requires a completed simulation of the same configuration within 24 hours, active Shopify/reception and configured email service. Activation starts a new scope containing only orders placed after activation; switching off and on starts a new scope. Saving settings and **Simuler maintenant** always perform a simulation, even when the daily automatic mode is live. Changing rules requires another simulation before live activation. A manual simulation leaves the next daily run and existing send records unchanged. Simulation never queues a new notification or calls Resend.
 
 **À surveiller** lists candidates and blocked cases; **Historique** includes orders previously detected overdue, exclusions and accepted sends. The interface shows deadlines/timezones, why an order is blocked, indicative promises, message previews and sending status. Agents can cancel queued/retrying sends; only owners/admins manage rules. Viewer and tenant boundaries are enforced on the server.
 

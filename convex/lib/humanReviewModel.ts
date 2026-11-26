@@ -38,10 +38,12 @@ export async function prepareHumanReview(
           .describe(
             "Proposition de traitement EN FRANÇAIS, sans action déjà effectuée ni promesse non vérifiée.",
           ),
-        brouillonLangueClient: z
+        brouillonLangueBoutique: z
           .string()
           .max(4000)
-          .describe("Brouillon à valider dans la langue du client ; vide si contexte insuffisant."),
+          .describe(
+            "Brouillon à valider dans la langue replyLocale de la boutique ; vide si elle manque ou si le contexte est insuffisant.",
+          ),
         informationsManquantesEnFrancais: z.array(z.string().max(200)).max(8),
         confidence: z.number().min(0).max(1),
       }),
@@ -69,7 +71,7 @@ export async function prepareHumanReview(
     {
       summary: result.object.resumeEnFrancais,
       solution: result.object.solutionEnFrancais,
-      draftReply: result.object.brouillonLangueClient,
+      draftReply: result.object.brouillonLangueBoutique,
       missingInformation: result.object.informationsManquantesEnFrancais,
       confidence: result.object.confidence,
     },
