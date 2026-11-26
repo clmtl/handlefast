@@ -52,8 +52,7 @@ export function EmailConversationPage({
         className="-ml-2 mb-4 text-muted-foreground"
         onClick={onBack}
       >
-        <ArrowLeft aria-hidden="true" /> Retour à{" "}
-        {backLabel === "À traiter" ? "la liste" : backLabel}
+        <ArrowLeft aria-hidden="true" /> {backLabel}
       </Button>
       <header className="border-b pb-5">
         <h1
