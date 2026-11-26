@@ -269,7 +269,11 @@ export default defineSchema({
     organizationId: v.optional(v.id("organizations")),
     shopId: v.optional(v.id("shops")),
     routeId: v.optional(v.id("inboundEmailRoutes")),
-    provider: v.union(v.literal("cloudflare_email_routing"), v.literal("google_takeout")),
+    provider: v.union(
+      v.literal("cloudflare_email_routing"),
+      v.literal("google_takeout"),
+      v.literal("gmail_api"),
+    ),
     deliveryKey: v.string(),
     envelopeFrom: v.string(),
     envelopeTo: v.string(),

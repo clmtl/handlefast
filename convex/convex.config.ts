@@ -9,6 +9,7 @@ const app = defineApp({
     BETTER_AUTH_SECRET: v.string(),
     CLOUDFLARE_EMAIL_WEBHOOK_SECRET: v.optional(v.string()),
     EMAIL_ROUTE_NAMESPACE: v.optional(v.string()),
+    GMAIL_OAUTH_CLIENT_ID: v.optional(v.string()),
     INBOUND_EMAIL_DOMAIN: v.optional(v.string()),
     REQUIRE_EMAIL_APPROVAL: v.optional(v.string()),
     RESEND_API_KEY: v.optional(v.string()),

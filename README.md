@@ -14,6 +14,19 @@ Resend d’envoi, limitée à ce domaine. Enregistrer ces clés uniquement dans 
 variables d’environnement du déploiement Convex. `RESEND_API_KEY` sert aux
 e-mails de connexion.
 
+## Import direct de l’historique Gmail
+
+Activer l’API Gmail dans un projet Google Cloud, créer un client OAuth de type
+application Web et ajouter l’origine exacte de HandleFast aux origines JavaScript
+autorisées. Configurer la portée `gmail.readonly` et ajouter les comptes pilotes
+aux utilisateurs de test. Renseigner l’identifiant public du client dans
+`GMAIL_OAUTH_CLIENT_ID` sur le déploiement Convex correspondant. Le connecteur
+remplace alors le sélecteur de fichiers. Il importe uniquement les messages
+reçus et envoyés qui correspondent à l’adresse SAV de la boutique, dans la
+limite de conservation de 12 mois. L’import est ponctuel et nécessite de garder
+l’onglet ouvert. Le jeton Google reste dans le navigateur pendant l’import.
+Les messages importés restent exclus des envois automatiques.
+
 ## Test local avec les connexions existantes
 
 `npm ci`, puis `npm run dev:connected` ouvre l’interface sur
