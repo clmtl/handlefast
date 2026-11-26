@@ -3,6 +3,19 @@ import { env } from "../_generated/server";
 import { validMailbox } from "./automaticReplyPolicy";
 import { getInboundEmailDomain } from "./inboundEmailRoutes";
 
+export function shopResendKey(address: string) {
+  if (!validMailbox(address) || !env.RESEND_SHOP_API_KEYS) return null;
+  try {
+    const keys: unknown = JSON.parse(env.RESEND_SHOP_API_KEYS);
+    const domain = address.slice(address.lastIndexOf("@") + 1).toLowerCase();
+    if (!keys || typeof keys !== "object" || !Object.hasOwn(keys, domain)) return null;
+    const key = (keys as Record<string, unknown>)[domain];
+    return typeof key === "string" && key.startsWith("re_") ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 export function verifiedShopSender(shop: Doc<"shops"> | null) {
   const address = shop?.supportEmail?.toLowerCase();
   if (
@@ -28,5 +41,5 @@ export function verifiedShopSender(shop: Doc<"shops"> | null) {
     (senders as Record<string, unknown>)[shop._id] !== address
   )
     return null;
-  return address;
+  return shopResendKey(address) ? address : null;
 }

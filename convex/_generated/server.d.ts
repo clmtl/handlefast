@@ -35,6 +35,7 @@ type Env = {
   readonly OPENAI_API_KEY: string | undefined;
   readonly REQUIRE_EMAIL_APPROVAL: string | undefined;
   readonly RESEND_API_KEY: string | undefined;
+  readonly RESEND_SHOP_API_KEYS: string | undefined;
   readonly SITE_URL: string;
   readonly TRACK17_API_KEY: string | undefined;
   readonly TRACK17_TEST_NUMBERS: string | undefined;
