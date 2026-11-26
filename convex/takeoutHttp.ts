@@ -28,16 +28,18 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
     return new Response(null, { status: 403 });
   }
 
-  const raw = await request.blob();
-  if (!raw.size || raw.size > maxTakeoutMessageBytes) return Response.json({ result: "skipped" });
+  // Convex HTTP request blobs can be streamed and consumed only once.
+  const raw = await request.arrayBuffer();
+  if (!raw.byteLength || raw.byteLength > maxTakeoutMessageBytes)
+    return Response.json({ result: "skipped" });
   let parsed: Awaited<ReturnType<typeof buildCloudflareEmailRoutingPayload>>;
   try {
     parsed = await buildCloudflareEmailRoutingPayload({
       from: "",
       to: "",
       headers: new Headers(),
-      raw: raw.stream(),
-      rawSize: raw.size,
+      raw: new Blob([raw]).stream(),
+      rawSize: raw.byteLength,
     });
   } catch {
     return Response.json({ result: "skipped" });
@@ -61,7 +63,7 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
   )
     return Response.json({ result: "skipped" });
 
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await raw.arrayBuffer()));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", raw));
   const sha256 = btoa(String.fromCharCode(...digest));
   const rawStorageId = await ctx.storage.store(new Blob([raw], { type: RAW_EMAIL_CONTENT_TYPE }));
   try {
@@ -70,7 +72,7 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
       supportEmail,
       rawStorageId,
       sha256,
-      rawSize: raw.size,
+      rawSize: raw.byteLength,
       source,
       date,
       direction: outbound ? "outbound" : "inbound",

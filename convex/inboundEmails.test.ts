@@ -3,7 +3,7 @@
 import betterAuthTest from "@convex-dev/better-auth/test";
 import type { FunctionArgs, UserIdentity } from "convex/server";
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { signWebhookBody, verifyWebhookSignature } from "./lib/webhookSignatures";
@@ -114,7 +114,10 @@ function inboundPayload(
 }
 
 describe("inbound email routing", () => {
-  test("imports a Takeout thread once and keeps only the unanswered message open", async () => {
+  test.each([
+    "takeout",
+    "gmail",
+  ])("imports a %s thread once and keeps only the unanswered message open", async (source) => {
     const t = createTestBackend();
     const owner = await createWorkspace(t, "takeout-owner");
     const outsider = await createWorkspace(t, "takeout-outsider");
@@ -125,7 +128,7 @@ describe("inbound email routing", () => {
       shopId,
       supportEmail: address,
     });
-    const path = `/takeout/message?shop=${shopId}`;
+    const path = `/takeout/message?shop=${shopId}&source=${source}`;
     const raw = (id: string, from: string, to: string, age: number, reply?: string) =>
       [
         `From: ${from}`,
@@ -153,7 +156,15 @@ describe("inbound email routing", () => {
     expect(await load(raw("not-this-shop", customer, "other@shop.example", 120))).toEqual({
       result: "skipped",
     });
-    expect(await load(first)).toEqual({ result: "imported" });
+    const streamingBlob = vi.spyOn(Request.prototype, "blob").mockImplementationOnce(async () => {
+      throw new TypeError("A streaming request Blob cannot be read twice");
+    });
+    try {
+      expect(await load(first)).toEqual({ result: "imported" });
+      expect(streamingBlob).not.toHaveBeenCalled();
+    } finally {
+      streamingBlob.mockRestore();
+    }
     expect(await load(raw("takeout-second", address, customer, 60, "takeout-first"))).toEqual({
       result: "imported",
     });
@@ -176,6 +187,7 @@ describe("inbound email routing", () => {
     expect(receipts.every((receipt) => receipt.autoReplyEligibility?.eligible === false)).toBe(
       true,
     );
+    expect(receipts.map((receipt) => receipt.source)).toEqual([source, source, source]);
     expect(await t.run((ctx) => ctx.db.query("automaticReplies").first())).toBeNull();
     expect(
       await owner.client.query(api.takeoutImport.thread, { receiptId: receipts[2]._id }),
