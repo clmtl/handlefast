@@ -1,5 +1,8 @@
 import { ConvexError, v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { internalMutation, type MutationCtx } from "./_generated/server";
+
+import { shopifyContactAddress } from "./lib/shopifyContact";
 
 const cursor = v.union(v.string(), v.null());
 const result = v.object({ nextCursor: cursor, changed: v.number() });
@@ -62,6 +65,24 @@ export const reconnectHistoricalReplies = internalMutation({
       if (before) continue;
       const conversation = await ctx.db.get(sent.conversationId);
       if (!conversation) continue;
+      const reference = await referencedShopifyForm(ctx, sent, conversation.customerEmail, now);
+      if (reference?.conversationId) {
+        const parent = await ctx.db.get(reference.conversationId);
+        if (parent?.shopId === shop._id && parent.customerEmail === "mailer@shopify.com")
+          await ctx.db.patch(parent._id, {
+            customerEmail: conversation.customerEmail,
+            updatedAt: now,
+          });
+        if (
+          parent?.shopId === shop._id &&
+          (parent.customerEmail === conversation.customerEmail ||
+            parent.customerEmail === "mailer@shopify.com")
+        ) {
+          await reconnect(ctx, sent, parent, now);
+          changed++;
+          continue;
+        }
+      }
       const subject = normalizedSubject(sent.subject ?? "");
       if (!subject || !replyPrefix.test(sent.subject?.trim() ?? "")) continue;
       const candidates = await ctx.db
@@ -94,11 +115,44 @@ export const reconnectHistoricalReplies = internalMutation({
         parent.customerEmail !== conversation.customerEmail
       )
         continue;
-      await ctx.db.patch(sent._id, { conversationId: target, updatedAt: now });
-      if (sent.receivedAt > parent.lastMessageAt)
-        await ctx.db.patch(target, { lastMessageAt: sent.receivedAt, updatedAt: now });
+      await reconnect(ctx, sent, parent, now);
       changed++;
     }
     return { nextCursor: page.isDone ? null : page.continueCursor, changed };
   },
 });
+
+async function referencedShopifyForm(
+  ctx: MutationCtx,
+  sent: Doc<"supportMessages">,
+  address: string,
+  now: number,
+) {
+  for (const id of new Set([sent.inReplyTo, ...[...sent.references].reverse()])) {
+    if (!id) continue;
+    const message = await ctx.db
+      .query("supportMessages")
+      .withIndex("by_shopId_and_messageId", (q) => q.eq("shopId", sent.shopId).eq("messageId", id))
+      .first();
+    if (
+      message?.direction === "inbound" &&
+      message.conversationId &&
+      (message.expiresAt ?? 0) > now &&
+      message.receivedAt <= sent.receivedAt &&
+      shopifyContactAddress(message) === address
+    )
+      return message;
+  }
+  return null;
+}
+
+async function reconnect(
+  ctx: MutationCtx,
+  sent: Doc<"supportMessages">,
+  parent: Doc<"supportConversations">,
+  now: number,
+) {
+  await ctx.db.patch(sent._id, { conversationId: parent._id, updatedAt: now });
+  if (sent.receivedAt > parent.lastMessageAt)
+    await ctx.db.patch(parent._id, { lastMessageAt: sent.receivedAt, updatedAt: now });
+}

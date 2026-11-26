@@ -1,6 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { suppressAutoResponse, validMailbox } from "./automaticReplyPolicy";
+import { shopifyContactAddress } from "./shopifyContact";
 import { verifiedShopSender } from "./shopSender";
 
 export async function manualReplyTarget(
@@ -32,7 +33,7 @@ export async function manualReplyTarget(
     suppressAutoResponse(message.headers)
   )
     return null;
-  const to = message.from.address.toLowerCase();
+  const to = shopifyContactAddress(message) ?? message.from.address.toLowerCase();
   if (
     !validMailbox(to) ||
     to === route.address ||

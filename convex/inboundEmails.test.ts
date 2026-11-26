@@ -238,6 +238,77 @@ describe("inbound email routing", () => {
     }
   });
 
+  test("reconnects a Shopify form and a reply using the referenced message and contact address", async () => {
+    const t = createTestBackend();
+    const owner = await createWorkspace(t, "shopify-form");
+    const supportEmail = "support@shop.example";
+    const customer = "customer@example.com";
+    await owner.client.mutation(api.emailInbox.saveSupportAddress, {
+      shopId: owner.shopId,
+      supportEmail,
+    });
+    async function importMail(headers: string[], secondsAgo: number) {
+      const response = await owner.client.fetch(`/takeout/message?shop=${owner.shopId}`, {
+        method: "POST",
+        headers: { "Content-Type": "message/rfc822" },
+        body: [
+          ...headers,
+          `Date: ${new Date(Date.now() - secondsAgo * 1000).toUTCString()}`,
+          "",
+          "Contenu du message",
+        ].join("\r\n"),
+      });
+      expect(await response.json()).toMatchObject({ result: "imported" });
+    }
+    await importMail(
+      [
+        "From: mailer@shopify.com",
+        `To: ${supportEmail}`,
+        `Reply-To: ${customer}`,
+        "Subject: Formulaire de contact",
+        "Message-ID: <form@example.com>",
+      ],
+      60,
+    );
+    const form = await t.run(async (ctx) => {
+      const message = await ctx.db.query("supportMessages").first();
+      if (!message?.receiptId || !message?.conversationId) throw new Error("Missing form");
+      const conversation = await ctx.db.get(message.conversationId);
+      expect(conversation?.customerEmail).toBe(customer);
+      // Restore the identity stored by versions before the fix.
+      await ctx.db.patch(message.conversationId, { customerEmail: message.from.address });
+      return { receiptId: message.receiptId, conversationId: message.conversationId };
+    });
+    await importMail(
+      [
+        `From: ${supportEmail}`,
+        `To: ${customer}`,
+        "Subject: Voici les informations",
+        "Message-ID: <reply@example.com>",
+        "In-Reply-To: <form@example.com>",
+      ],
+      30,
+    );
+    const timeline = () =>
+      owner.client.query(api.emailConversations.timeline, {
+        receiptId: form.receiptId,
+        includeOlder: false,
+      });
+    expect(await timeline()).toHaveLength(1);
+    expect(
+      await t.mutation(internal.historyMaintenance.reconnectHistoricalReplies, {
+        shopId: owner.shopId,
+        cursor: null,
+      }),
+    ).toEqual({ nextCursor: null, changed: 1 });
+    expect(await timeline()).toMatchObject([
+      { direction: "inbound", sender: customer },
+      { direction: "outbound", sender: supportEmail },
+    ]);
+    expect((await t.run((ctx) => ctx.db.get(form.conversationId)))?.customerEmail).toBe(customer);
+    expect(await t.run((ctx) => ctx.db.query("automaticReplies").first())).toBeNull();
+  });
+
   test("verifies reception on the first ordinary email to the configured support address", async () => {
     const t = createTestBackend();
     const workspace = await createWorkspace(t, "ordinary-forward");
