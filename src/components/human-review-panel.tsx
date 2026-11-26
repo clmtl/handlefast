@@ -219,7 +219,7 @@ function DraftEditor({
       </label>
       <p className="mt-2 text-xs text-muted-foreground">
         {edited ? "Brouillon modifié par l’équipe. " : "Proposition à relire et adapter. "}Validez
-        les faits et les engagements avant tout envoi depuis votre messagerie.
+        les faits et les engagements avant de confirmer l’envoi.
       </p>
       <Dialog
         open={approval !== null}

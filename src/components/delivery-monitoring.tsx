@@ -384,10 +384,15 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
       <Dialog open={activation} onOpenChange={setActivation}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Activer les notifications de retard</DialogTitle>
+            <DialogTitle>
+              {settings.approvalRequired
+                ? "Activer la surveillance des retards"
+                : "Activer les notifications de retard"}
+            </DialogTitle>
             <DialogDescription>
-              Les nouvelles commandes deviennent éligibles. HandleFast enverra au plus un email par
-              commande en retard, si le client n’a pas déjà contacté le SAV à son sujet.
+              {settings.approvalRequired
+                ? "HandleFast repère les retards sur les nouvelles commandes. Tu confirmes chaque avis avant l’envoi."
+                : "Les nouvelles commandes deviennent éligibles. HandleFast enverra au plus un email par commande en retard, si le client n’a pas déjà contacté le SAV à son sujet."}
             </DialogDescription>
           </DialogHeader>
           {feedback && (
@@ -404,7 +409,9 @@ export function DeliveryMonitoring({ shopId }: { shopId: Id<"shops"> }) {
               onClick={() =>
                 void perform(
                   () => save({ shopId, ...values(), mode: "live" }),
-                  "Notifications activées.",
+                  settings.approvalRequired
+                    ? "Surveillance activée. Chaque avis attend ta validation."
+                    : "Notifications activées.",
                   () => setActivation(false),
                 )
               }
