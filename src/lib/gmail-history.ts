@@ -114,6 +114,7 @@ export async function importGmailHistory({
                 shop: shopId,
                 date: message.internalDate ?? "",
                 source: "gmail",
+                thread: thread.id,
               })}`,
               {
                 method: "POST",

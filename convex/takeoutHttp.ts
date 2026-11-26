@@ -4,6 +4,7 @@ import { maxTakeoutMessageBytes } from "../src/lib/takeout-mbox";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { RAW_EMAIL_CONTENT_TYPE } from "./lib/emailPolicy";
+import { emailBodyText } from "./lib/emailTranslationPolicy";
 
 const clip = (value: string, size: number) => value.slice(0, size).replace(/[\uD800-\uDBFF]$/, "");
 const clipped = (value: string | undefined, size: number) =>
@@ -18,6 +19,9 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
   const source = url.searchParams.get("source") === "gmail" ? "gmail" : "takeout";
+  const thread = url.searchParams.get("thread");
+  const gmailThreadId =
+    source === "gmail" && thread && /^[a-f0-9]{1,40}$/i.test(thread) ? thread : undefined;
   if (!shop || shop.length > 64 || !request.body) return new Response(null, { status: 400 });
   if (Number(request.headers.get("content-length")) > maxTakeoutMessageBytes)
     return Response.json({ result: "skipped" });
@@ -74,6 +78,7 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
       sha256,
       rawSize: raw.byteLength,
       source,
+      gmailThreadId,
       date,
       direction: outbound ? "outbound" : "inbound",
       from: identity(parsed.from),
@@ -81,7 +86,7 @@ export const takeoutMessage = httpAction(async (ctx, request) => {
       cc: parsed.cc.slice(0, 30).map(identity),
       replyTo: parsed.replyTo.slice(0, 30).map(identity),
       subject: clipped(parsed.subject, 1000),
-      text: clipped(parsed.text, 12000),
+      text: clipped(emailBodyText(parsed.text, parsed.html) || undefined, 12000),
       snippet: clipped(parsed.snippet, 320),
       messageId: clipped(parsed.messageId, 500),
       inReplyTo: clipped(parsed.inReplyTo, 500),

@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { getOrCreateConversationId } from "./inboundEmails";
 import { assertCanManageOrganization, requireShopMembership } from "./lib/authorization";
@@ -30,6 +31,7 @@ export const commit = internalMutation({
     sha256: v.string(),
     rawSize: v.number(),
     source: v.optional(v.union(v.literal("takeout"), v.literal("gmail"))),
+    gmailThreadId: field,
     date: v.number(),
     direction,
     from: identity,
@@ -86,20 +88,40 @@ export const commit = internalMutation({
           )
           .first()
       : null;
-    if (
-      duplicate ||
-      (await ctx.db
-        .query("emailReceipts")
-        .withIndex("by_key", (q) => q.eq("key", key))
-        .first())
-    )
-      return "duplicate";
-
     const automatic =
       suppressAutoResponse(args.headers) ||
       /(?:no-?reply|mailer-daemon|postmaster)(?:[+._-][^@]*)?@/i.test(args.from.address);
+    const originalReceipt = duplicate
+      ? null
+      : await ctx.db
+          .query("emailReceipts")
+          .withIndex("by_key", (q) => q.eq("key", key))
+          .first();
+    const existing =
+      duplicate ??
+      (originalReceipt
+        ? await ctx.db
+            .query("supportMessages")
+            .withIndex("by_receiptId", (q) => q.eq("receiptId", originalReceipt._id))
+            .first()
+        : null);
+    const sameThread =
+      !automatic && args.gmailThreadId
+        ? await gmailConversation(ctx, shop._id, args.gmailThreadId, customer.address)
+        : null;
+    if (existing || originalReceipt) {
+      if (existing && args.gmailThreadId)
+        await ctx.db.patch(existing._id, {
+          gmailThreadId: args.gmailThreadId,
+          ...(sameThread && existing.direction === "outbound"
+            ? { conversationId: sameThread }
+            : {}),
+        });
+      return "duplicate";
+    }
     const conversationId = !automatic
-      ? await getOrCreateConversationId(ctx, {
+      ? (sameThread ??
+        (await getOrCreateConversationId(ctx, {
           route,
           customerEmail: customer.address,
           inReplyTo: args.inReplyTo ?? null,
@@ -107,7 +129,7 @@ export const commit = internalMutation({
           subject: args.subject ?? null,
           receivedAt,
           now,
-        })
+        })))
       : undefined;
     const previous = conversationId
       ? await ctx.db
@@ -182,6 +204,7 @@ export const commit = internalMutation({
       deliveryId,
       receiptId,
       expiresAt,
+      gmailThreadId: args.gmailThreadId,
       direction: args.direction,
       from: args.from,
       to: args.to,
@@ -261,3 +284,27 @@ export const thread = query({
     );
   },
 });
+
+async function gmailConversation(
+  ctx: import("./_generated/server").MutationCtx,
+  shopId: Doc<"shops">["_id"],
+  gmailThreadId: string,
+  address: string,
+) {
+  const candidates = await ctx.db
+    .query("supportMessages")
+    .withIndex("by_shopId_and_gmailThreadId", (q) =>
+      q.eq("shopId", shopId).eq("gmailThreadId", gmailThreadId),
+    )
+    .take(50);
+  // Prefer an incoming message, so a Gmail reimport attaches sent copies to the inbox thread.
+  candidates.sort(
+    (a, b) => Number(a.direction === "outbound") - Number(b.direction === "outbound"),
+  );
+  for (const message of candidates) {
+    if (!message.conversationId || (message.expiresAt ?? 0) <= Date.now()) continue;
+    const conversation = await ctx.db.get(message.conversationId);
+    if (conversation?.customerEmail === address) return conversation._id;
+  }
+  return null;
+}

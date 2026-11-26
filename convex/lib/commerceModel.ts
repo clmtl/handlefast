@@ -87,6 +87,7 @@ export const shipmentFields = {
   fulfillmentId: v.string(),
   carrier: v.optional(v.number()),
   registered: v.boolean(),
+  manualRefreshUntil: v.optional(v.number()),
   nextAttemptAt: v.number(),
   status: v.string(),
   events: v.array(trackingEvent),

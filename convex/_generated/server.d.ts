@@ -39,7 +39,6 @@ type Env = {
   readonly RESEND_SHOP_API_KEYS: string | undefined;
   readonly SITE_URL: string;
   readonly TRACK17_API_KEY: string | undefined;
-  readonly TRACK17_TEST_NUMBERS: string | undefined;
   readonly VERIFIED_SHOP_SENDERS: string | undefined;
 };
 

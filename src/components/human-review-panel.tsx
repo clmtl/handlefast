@@ -2,7 +2,6 @@ import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { blockReasons, reviewStatuses, reviewWarnings } from "../../convex/lib/humanReviewPolicy";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -13,214 +12,125 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 
-const button =
-  "rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
-
 export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts"> }) {
   const value = useQuery(api.humanReviews.get, { receiptId });
-  const request = useMutation(api.humanReviews.request),
-    setStatus = useMutation(api.humanReviews.setStatus);
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  async function perform(action: () => Promise<unknown>) {
+  const setStatus = useMutation(api.humanReviews.setStatus);
+  const saveDraft = useMutation(api.humanReviews.saveDraft);
+  const approve = useMutation(api.automaticReplies.approveManual);
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [approval, setApproval] = useState<{ from: string; to: string; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  async function perform(action: () => Promise<unknown>, failure: string) {
     setBusy(true);
     setError("");
     try {
       await action();
     } catch {
-      setError("La demande n’a pas pu être mise à jour. Réessayez.");
+      setError(failure);
     } finally {
       setBusy(false);
     }
   }
-  if (!value) return null;
-  const { review, canManage, stale, draftLanguageMatches, sendTarget } = value,
-    proposal = review?.proposal;
+
+  if (!value?.review)
+    return notice ? (
+      <p role="status" className="text-sm">
+        {notice}
+      </p>
+    ) : null;
+  const { review, canManage, sendTarget, draftLanguageMatches } = value;
+  const resolved = review.status === "resolved";
+  const draft =
+    text ?? review.editedDraft ?? (draftLanguageMatches ? review.proposal?.draftReply : "") ?? "";
+
   return (
-    <section
-      className="mt-4 rounded-lg border border-amber-600 bg-amber-50/40 p-4"
-      aria-label="Traitement humain"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Traitement humain</h3>
-        {review && (
-          <span className="rounded-full border border-amber-600 px-2.5 py-1 text-xs font-medium">
-            {reviewStatuses[review.status]}
-          </span>
+    <section aria-label="Répondre à la conversation">
+      <div className="flex flex-wrap items-center gap-2">
+        {resolved && (
+          <span className="mr-auto text-sm font-medium text-muted-foreground">Traitée</span>
+        )}
+        {canManage && !resolved && !editing && (
+          <Button
+            onClick={() => {
+              setNotice("");
+              setEditing(true);
+            }}
+          >
+            {draft ? "Ouvrir le brouillon" : "Répondre"}
+          </Button>
+        )}
+        {canManage && !editing && (
+          <Button
+            variant={resolved ? "ghost" : "outline"}
+            disabled={busy}
+            onClick={() => {
+              setNotice("");
+              void perform(
+                () => setStatus({ receiptId, status: resolved ? "open" : "resolved" }),
+                "Impossible de changer le statut.",
+              );
+            }}
+          >
+            {resolved ? "Rouvrir" : "Marquer comme traitée"}
+          </Button>
         )}
       </div>
-      <p className="mt-2 text-sm">{blockReasons[value.reason]}</p>
-      {error && (
+      {editing && (
+        <div className="space-y-3">
+          <label className="block text-sm font-medium">
+            Réponse
+            <textarea
+              className="mt-2 min-h-36 w-full rounded-md border bg-background p-3 text-sm font-normal"
+              value={draft}
+              maxLength={6000}
+              onChange={(event) => setText(event.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {sendTarget && (
+              <Button
+                disabled={busy || !draft.trim()}
+                onClick={() => {
+                  setError("");
+                  setApproval({ ...sendTarget, text: draft.trim() });
+                }}
+              >
+                Vérifier l’envoi
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              disabled={busy || text === null}
+              onClick={() =>
+                void perform(async () => {
+                  await saveDraft({ receiptId, draft });
+                  setEditing(false);
+                  setNotice("Brouillon enregistré.");
+                }, "Impossible d’enregistrer le brouillon.")
+              }
+            >
+              Enregistrer le brouillon
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
+              Fermer
+            </Button>
+          </div>
+        </div>
+      )}
+      {notice && (
+        <p role="status" className="mt-2 text-sm">
+          {notice}
+        </p>
+      )}
+      {error && !approval && (
         <p role="alert" className="mt-2 text-sm text-destructive">
           {error}
         </p>
       )}
-      {review?.job && (
-        <p role="status" className="mt-3 text-sm">
-          Préparation du résumé et de la proposition…
-        </p>
-      )}
-      {stale && (
-        <p
-          role="status"
-          className="mt-3 rounded-md border border-amber-600 bg-amber-50 p-3 text-sm text-amber-950"
-        >
-          Le contexte a changé depuis cette proposition. Régénérez-la ou adaptez votre brouillon
-          avant de l’utiliser.
-        </p>
-      )}
-      {proposal && (
-        <div className="mt-4 grid gap-4">
-          {proposal.source === "fallback" && (
-            <p className="text-sm font-medium">
-              Assistance indisponible : la demande reste à traiter.
-            </p>
-          )}
-          <div>
-            <h4 className="text-sm font-semibold">Résumé</h4>
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">{proposal.summary}</p>
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold">Piste de résolution</h4>
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">{proposal.solution}</p>
-          </div>
-          {(proposal.missingInformation.length > 0 || proposal.warnings.length > 0) && (
-            <div>
-              <h4 className="text-sm font-semibold">Informations à vérifier</h4>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-                {proposal.warnings.map((warning) => (
-                  <li key={warning}>{reviewWarnings[warning]}</li>
-                ))}
-                {[...new Set(proposal.missingInformation)].map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-      {review && (
-        <DraftEditor
-          receiptId={receiptId}
-          saved={review.editedDraft ?? (draftLanguageMatches ? (proposal?.draftReply ?? "") : "")}
-          suggested={draftLanguageMatches ? (proposal?.draftReply ?? "") : ""}
-          canManage={canManage}
-          sendTarget={sendTarget}
-          edited={review.editedDraft !== undefined}
-        />
-      )}
-      {canManage && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            className={button}
-            type="button"
-            disabled={busy || Boolean(review?.job)}
-            onClick={() => void perform(() => request({ receiptId }))}
-          >
-            {proposal ? "Régénérer la proposition" : "Préparer le résumé et la proposition"}
-          </button>
-          {review && review.status !== "in_progress" && review.status !== "resolved" && (
-            <button
-              className={button}
-              type="button"
-              disabled={busy}
-              onClick={() => void perform(() => setStatus({ receiptId, status: "in_progress" }))}
-            >
-              Prendre en charge
-            </button>
-          )}
-          {review && review.status !== "resolved" && (
-            <button
-              className={`${button} bg-primary text-primary-foreground hover:bg-primary/90`}
-              type="button"
-              disabled={busy}
-              onClick={() => void perform(() => setStatus({ receiptId, status: "resolved" }))}
-            >
-              Marquer comme traité
-            </button>
-          )}
-          {review?.status === "resolved" && (
-            <button
-              className={button}
-              type="button"
-              disabled={busy}
-              onClick={() => void perform(() => setStatus({ receiptId, status: "open" }))}
-            >
-              Rouvrir la demande
-            </button>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function DraftEditor({
-  receiptId,
-  saved,
-  suggested,
-  canManage,
-  sendTarget,
-  edited,
-}: {
-  receiptId: Id<"emailReceipts">;
-  saved: string;
-  suggested: string;
-  canManage: boolean;
-  sendTarget: { from: string; to: string } | null;
-  edited: boolean;
-}) {
-  const saveDraft = useMutation(api.humanReviews.saveDraft);
-  const approve = useMutation(api.automaticReplies.approveManual);
-  const [approval, setApproval] = useState<{ from: string; to: string; text: string } | null>(null);
-  const [sendError, setSendError] = useState("");
-  const [text, setText] = useState(""),
-    [editing, setEditing] = useState(false),
-    [busy, setBusy] = useState(false),
-    [feedback, setFeedback] = useState("");
-  const draft = editing ? text : saved;
-  async function save() {
-    setBusy(true);
-    setFeedback("");
-    try {
-      await saveDraft({ receiptId, draft });
-      setEditing(false);
-      setFeedback("Brouillon enregistré.");
-    } catch {
-      setFeedback("Le brouillon n’a pas pu être enregistré.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(draft);
-      setFeedback("Brouillon copié. Relisez-le avant de l’envoyer depuis votre messagerie.");
-    } catch {
-      setFeedback("Copie impossible. Sélectionnez et copiez le texte manuellement.");
-    }
-  }
-  return (
-    <div className="mt-4">
-      <label className="grid gap-2 text-sm font-semibold">
-        Brouillon de réponse à valider
-        <textarea
-          className="min-h-40 w-full rounded-md border border-slate-500 bg-background p-3 text-sm font-normal leading-6"
-          value={draft}
-          maxLength={6000}
-          readOnly={!canManage}
-          onChange={(event) => {
-            setText(event.target.value);
-            setEditing(true);
-            setFeedback("");
-          }}
-          placeholder="Préparez une réponse après vérification des informations."
-        />
-      </label>
-      <p className="mt-2 text-xs text-muted-foreground">
-        {edited ? "Brouillon modifié par l’équipe. " : "Proposition à relire et adapter. "}Validez
-        les faits et les engagements avant de confirmer l’envoi.
-      </p>
       <Dialog
         open={approval !== null}
         onOpenChange={(open) => {
@@ -230,47 +140,41 @@ function DraftEditor({
         <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Confirmer l’envoi</DialogTitle>
-            <DialogDescription>
-              L’email partira depuis l’adresse SAV autorisée pour cette boutique.
+            <DialogDescription className="break-all">
+              De {approval?.from}
+              <br />À {approval?.to}
             </DialogDescription>
           </DialogHeader>
-          {approval && (
-            <>
-              <p className="break-all text-sm">
-                De {approval.from}
-                <br />À {approval.to}
-              </p>
-              <p className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">
-                {approval.text}
-              </p>
-            </>
-          )}
-          {sendError && (
+          <p className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">
+            {approval?.text}
+          </p>
+          {error && (
             <p className="text-sm text-destructive" role="alert">
-              {sendError}
+              {error}
             </p>
           )}
           <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setApproval(null)}>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setApproval(null);
+                setError("");
+              }}
+            >
               Annuler
             </Button>
             <Button
               disabled={busy || !approval}
-              onClick={async () => {
+              onClick={() => {
                 if (!approval) return;
-                setBusy(true);
-                setSendError("");
-                try {
+                void perform(async () => {
                   await approve({ receiptId, ...approval });
                   setApproval(null);
-                  setFeedback("Envoi validé.");
-                } catch {
-                  setSendError(
-                    "L’envoi est indisponible ou a déjà été validé. Vérifie son statut.",
-                  );
-                } finally {
-                  setBusy(false);
-                }
+                  setEditing(false);
+                  setText(null);
+                  setNotice("Envoi validé.");
+                }, "L’envoi est indisponible ou a déjà été validé.");
               }}
             >
               Confirmer et envoyer
@@ -278,56 +182,6 @@ function DraftEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {canManage && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {sendTarget && (
-            <Button
-              disabled={busy || !draft.trim()}
-              onClick={() => {
-                setSendError("");
-                setApproval({ ...sendTarget, text: draft.trim() });
-              }}
-            >
-              Relire et envoyer
-            </Button>
-          )}
-          <button
-            className={button}
-            type="button"
-            disabled={busy || !editing}
-            onClick={() => void save()}
-          >
-            Enregistrer le brouillon
-          </button>
-          <button
-            className={button}
-            type="button"
-            disabled={!draft.trim()}
-            onClick={() => void copy()}
-          >
-            Copier le brouillon
-          </button>
-          {suggested && (
-            <button
-              className={button}
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setText(suggested);
-                setEditing(true);
-                setFeedback("");
-              }}
-            >
-              Reprendre la proposition
-            </button>
-          )}
-        </div>
-      )}
-      {feedback && (
-        <p role="status" className="mt-2 text-sm">
-          {feedback}
-        </p>
-      )}
-    </div>
+    </section>
   );
 }

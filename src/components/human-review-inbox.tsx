@@ -94,10 +94,6 @@ function ReviewList({
                 <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                   {item.from} · {new Date(item.receivedAt).toLocaleDateString("fr-FR")}
                 </span>
-                <span className="mt-1.5 block line-clamp-2 text-sm text-muted-foreground">
-                  {item.summary ??
-                    (item.pending ? "Résumé en préparation…" : "Ouvrir pour traiter la demande.")}
-                </span>
                 <span className="mt-2 flex flex-wrap gap-1.5">
                   {item.category && <Badge variant="outline">{categories[item.category]}</Badge>}
                   {item.priority && (
