@@ -135,7 +135,7 @@ const messages = {
     separator: "oder",
     localCourier: "Beim lokalen Zusteller",
     deliveryArea: "Liefergebiet",
-    title: "Meine Lieferung verfolgen",
+    title: "Sendungsverfolgung",
     intro: "Verwende deine Bestelldaten oder die Sendungsnummer deines Pakets.",
     byOrder: "Nach Bestellnummer",
     orderNumber: "Bestellnummer",

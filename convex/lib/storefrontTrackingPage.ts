@@ -120,6 +120,7 @@ export function trackingResult(
           ? `<iframe title="${text.deliveryArea}" src="${escapeHtml(destination.url)}" loading="lazy" referrerpolicy="no-referrer"></iframe>`
           : ""
       }
+      ${destination.source === "GeoNames" ? '<p class="map-source"><a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">© GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></p>' : ""}
     </figure>`
         : ""
     }
@@ -207,6 +208,7 @@ export function trackingPage(
     .last-update { margin: 1rem 0 0; font-size: .8rem; border-top: 1px solid #e6e7e8; padding-top: .65rem; }
     .delivery-map { margin: .75rem 0 0; overflow: hidden; background: #fff; border: 1px solid #d8dbe0; border-radius: .75rem; }
     .delivery-map figcaption { padding: .7rem 1rem; }
+    .map-source { margin: .35rem .75rem; font-size: .75rem; }
     .delivery-map iframe { display: block; border: 0; width: 100%; height: 235px; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     @media (max-width: 600px) {

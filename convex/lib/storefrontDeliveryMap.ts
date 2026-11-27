@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
+import germanDeliveryCities from "./data/germanDeliveryCities.json";
 
 type Destination = { city: string; country: string; zip: string };
-export type DeliveryMap = { city: string; url?: string };
+export type DeliveryMap = { city: string; url?: string; source?: "GeoNames" };
 
 const communeList = z.array(
   z.object({
@@ -85,6 +86,20 @@ async function spanishPoint(city: string, zip: string) {
     : null;
 }
 
+const germanCityPointList = z.array(
+  z.tuple([z.number(), z.number(), z.array(z.string()).optional()]),
+);
+const germanCityPoints: Record<string, unknown> = germanDeliveryCities;
+
+function germanPoint(city: string, zip: string) {
+  const key = normalize(city);
+  if (!Object.hasOwn(germanCityPoints, key)) return null;
+  const places = germanCityPointList.parse(germanCityPoints[key]);
+  const matches = places.length === 1 ? places : places.filter((point) => point[2]?.includes(zip));
+  if (matches.length !== 1) return null;
+  return [matches[0][0], matches[0][1]];
+}
+
 async function resolvePoint(ctx: ActionCtx, country: "FR" | "ES", city: string, zip: string) {
   const cachePrefix = country === "ES" ? "ES:" : "";
   const key = `${cachePrefix}${normalize(city)}:${/^\d{5}$/.test(zip) ? zip : ""}`;
@@ -111,10 +126,13 @@ export async function deliveryMap(
   const city = destination.city.trim();
   if (!city || city.length > 100) return undefined;
   const fallback = { city };
-  if (destination.country !== "FR" && destination.country !== "ES") return fallback;
+  const { country } = destination;
+  if (country !== "FR" && country !== "ES" && country !== "DE") return fallback;
 
   try {
-    const point = await resolvePoint(ctx, destination.country, city, destination.zip.trim());
+    const zip = destination.zip.trim();
+    const point =
+      country === "DE" ? germanPoint(city, zip) : await resolvePoint(ctx, country, city, zip);
     if (!point) return fallback;
     const [longitude, latitude] = point;
     const map = new URL("https://www.openstreetmap.org/export/embed.html");
@@ -129,7 +147,7 @@ export async function deliveryMap(
         .map((value) => value.toFixed(3))
         .join(","),
     );
-    return { city, url: map.href };
+    return { city, url: map.href, ...(country === "DE" ? { source: "GeoNames" as const } : {}) };
   } catch {
     return fallback;
   }
