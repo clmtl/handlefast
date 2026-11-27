@@ -79,6 +79,14 @@ export const trackingEvent = v.object({
   description: v.string(),
   location: v.string(),
 });
+const trackingMilestones = v.object({
+  prepared: v.optional(v.number()),
+  transit: v.optional(v.number()),
+  localCourier: v.optional(v.number()),
+  pickup: v.optional(v.number()),
+  outForDelivery: v.optional(v.number()),
+  delivered: v.optional(v.number()),
+});
 export const shipmentFields = {
   shopId: v.id("shops"),
   organizationId: v.id("organizations"),
@@ -91,9 +99,11 @@ export const shipmentFields = {
   carrier: v.optional(v.number()),
   registered: v.boolean(),
   manualRefreshUntil: v.optional(v.number()),
+  autoTrackAt: v.optional(v.number()),
   nextAttemptAt: v.number(),
   status: v.string(),
   events: v.array(trackingEvent),
+  milestones: v.optional(trackingMilestones),
   eventAt: v.optional(v.number()),
   syncedAt: v.optional(v.number()),
   error: v.optional(v.string()),
@@ -104,6 +114,7 @@ export const trackingUpdate = v.object({
   carrier: v.number(),
   status: v.string(),
   events: v.array(trackingEvent),
+  milestones: v.optional(trackingMilestones),
   eventAt: v.optional(v.number()),
 });
 export function shopDomain(input: string) {

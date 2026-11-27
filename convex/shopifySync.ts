@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { internalAction, internalMutation, mutation } from "./_generated/server";
+import { env, internalAction, internalMutation, mutation } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
 import { orderData } from "./lib/commerceModel";
 import {
@@ -298,6 +298,10 @@ export async function persistOrder(
       generation: row.generation,
       orderId,
       registered: false,
+      autoTrackAt:
+        env.STOREFRONT_TRACKING_AUTO_REGISTER === row.domain && !order.cancelled
+          ? Date.now()
+          : undefined,
       nextAttemptAt: Date.now(),
       status: "Unavailable",
       events: [],

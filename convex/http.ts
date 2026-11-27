@@ -1,10 +1,15 @@
 import type { FunctionArgs } from "convex/server";
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
-import { env, httpAction } from "./_generated/server";
+import { type ActionCtx, env, httpAction } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
 import { shopifyWebhook, trackingWebhook } from "./commerceHttp";
+import { normalizedEmail } from "./lib/commerceModel";
+import { deliveryMap } from "./lib/storefrontDeliveryMap";
+import { storefrontLanguage } from "./lib/storefrontTrackingLanguage";
+import { trackingMessage, trackingPage, trackingResult } from "./lib/storefrontTrackingPage";
 import { verifyWebhookSignature } from "./lib/webhookSignatures";
+import { storefrontPilotDomain } from "./storefrontTracking";
 import { takeoutMessage } from "./takeoutHttp";
 
 const http = httpRouter();
@@ -14,6 +19,95 @@ authComponent.registerRoutes(http, createAuth);
 http.route({ path: "/takeout/message", method: "POST", handler: takeoutMessage });
 http.route({ path: "/webhooks/shopify", method: "POST", handler: shopifyWebhook });
 http.route({ path: "/webhooks/17track", method: "POST", handler: trackingWebhook });
+
+const storefrontTrackingPath = "/storefront/tracking-pilot";
+const trackingNumberPattern = /^[a-z0-9 _-]{3,128}$/i;
+
+async function renderStorefrontTracking(
+  ctx: ActionCtx,
+  params: URLSearchParams,
+  search?: FunctionArgs<typeof internal.storefrontTracking.lookup>["search"],
+  invalid?: "choose" | "invalidTracking" | "invalidOrder",
+) {
+  const language = storefrontLanguage(params.get("lang"));
+  const accent = params.get("accent");
+  const { text } = language;
+  const message = (content: keyof typeof text, status = 200) =>
+    trackingPage(language, trackingMessage(text[content], status >= 400), status, accent);
+  if (invalid) return message(invalid, 400);
+  if (!search) return trackingPage(language, "", 200, accent);
+
+  const result = await ctx.runMutation(internal.storefrontTracking.lookup, { search });
+  switch (result.kind) {
+    case "limited":
+      return message("limited", 429);
+    case "missing":
+      return message(search.mode === "order" ? "missingOrder" : "missingTracking", 404);
+    case "pending":
+    case "noTracking":
+    case "cancelled":
+      return message(result.kind);
+    case "parcels":
+      return trackingPage(
+        language,
+        trackingResult(language, result.parcels, await deliveryMap(ctx, result.destination)),
+        200,
+        accent,
+      );
+  }
+}
+http.route({
+  path: storefrontTrackingPath,
+  method: "GET",
+  handler: httpAction(async (ctx, req) => {
+    if (env.STOREFRONT_TRACKING_PILOT !== storefrontPilotDomain)
+      return new Response(null, { status: 404 });
+    const params = new URL(req.url).searchParams;
+    const number = params.get("nums")?.trim();
+    if (!number) return renderStorefrontTracking(ctx, params);
+    if (!trackingNumberPattern.test(number))
+      return renderStorefrontTracking(ctx, params, undefined, "invalidTracking");
+    return renderStorefrontTracking(ctx, params, { mode: "tracking", number });
+  }),
+});
+http.route({
+  path: storefrontTrackingPath,
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    if (env.STOREFRONT_TRACKING_PILOT !== storefrontPilotDomain)
+      return new Response(null, { status: 404 });
+    if (req.headers.get("content-type")?.split(";")[0] !== "application/x-www-form-urlencoded")
+      return new Response(null, { status: 415 });
+
+    const body = await readWebhookBody(req);
+    if (body === null) return new Response(null, { status: 413 });
+    const form = new URLSearchParams(body);
+    const params = new URL(req.url).searchParams;
+    const mode = form.get("mode");
+    const number = form.get("number")?.trim() ?? "";
+    const email = normalizedEmail(form.get("email"));
+    if (mode !== "tracking" && mode !== "order")
+      return renderStorefrontTracking(ctx, params, undefined, "choose");
+    if (mode === "tracking" && !trackingNumberPattern.test(number))
+      return renderStorefrontTracking(ctx, params, undefined, "invalidTracking");
+    if (
+      mode === "order" &&
+      (!number.replace(/^#/, "") ||
+        number.length > 64 ||
+        /\p{Cc}/u.test(number) ||
+        !email ||
+        email.length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    )
+      return renderStorefrontTracking(ctx, params, undefined, "invalidOrder");
+
+    const search =
+      mode === "order" && email
+        ? ({ mode, number, email } as const)
+        : ({ mode: "tracking", number } as const);
+    return renderStorefrontTracking(ctx, params, search);
+  }),
+});
 
 http.route({
   path: "/webhooks/cloudflare/email-routing",

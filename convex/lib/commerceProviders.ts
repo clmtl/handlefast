@@ -231,7 +231,28 @@ const eventSchema = z.object({
   time_iso: z.string().nullish(),
   description: z.string().nullish(),
   location: z.string().nullish(),
+  stage: z.string().nullish(),
 });
+
+function trackingTime(event: { time_utc?: string | null; time_iso?: string | null }) {
+  for (const date of [event.time_utc, event.time_iso]) {
+    if (!date || !/(?:Z|[+-]\d\d:\d\d)$/.test(date)) continue;
+    const time = Date.parse(date);
+    if (Number.isFinite(time)) return time;
+  }
+  return null;
+}
+
+const milestoneStages = new Map<string, string>([
+  ["InfoReceived", "prepared"],
+  ["PickedUp", "transit"],
+  ["Departure", "transit"],
+  ["Arrival", "transit"],
+  ["AvailableForPickup", "pickup"],
+  ["OutForDelivery", "outForDelivery"],
+  ["Delivered", "delivered"],
+] as const);
+
 export function normalizeTracking(raw: unknown) {
   const parsed = z
     .object({
@@ -241,6 +262,10 @@ export function normalizeTracking(raw: unknown) {
         .object({
           latest_status: z.object({ status: z.string().max(100) }).nullish(),
           latest_event: eventSchema.nullish(),
+          milestone: z
+            .array(eventSchema.extend({ key_stage: z.string() }))
+            .max(50)
+            .nullish(),
           tracking: z
             .object({
               providers: z
@@ -257,18 +282,36 @@ export function normalizeTracking(raw: unknown) {
         .nullish(),
     })
     .parse(raw);
-  const events = [
+  const providerEvents = [
     ...(parsed.track_info?.tracking?.providers?.flatMap((p) => p.events ?? []) ?? []),
     ...(parsed.track_info?.latest_event ? [parsed.track_info.latest_event] : []),
-  ].map((event) => {
-    const date = event.time_utc ?? event.time_iso;
-    const time = date && /(?:Z|[+-]\d\d:\d\d)$/.test(date) ? Date.parse(date) : Number.NaN;
-    return {
-      time: Number.isFinite(time) ? time : null,
-      description: (event.description ?? "").slice(0, 2000),
-      location: (event.location ?? "").slice(0, 500),
-    };
-  });
+  ];
+  const milestones = new Map<string, number>();
+  for (const event of [
+    ...(parsed.track_info?.milestone?.map((milestone) => ({
+      ...milestone,
+      stage: milestone.key_stage,
+    })) ?? []),
+    ...providerEvents,
+  ]) {
+    const description = event.description ?? "";
+    const localHandoff =
+      !/\b(?:not|awaiting|waiting|pending|expected|will|to be|pas encore|en attente|en attente de|pendiente)\b/i.test(
+        description,
+      ) &&
+      /(?:handed over|transferred|delivered|passed) to (?:the )?(?:local|last[ -]mile|final[ -]mile) (?:carrier|courier|delivery partner)|remis au transporteur local|transmis au livreur local|entregado al transportista local/i.test(
+        description,
+      );
+    const stage = localHandoff ? "localCourier" : milestoneStages.get(event.stage ?? "");
+    const time = trackingTime(event);
+    if (stage && time !== null)
+      milestones.set(stage, Math.min(time, milestones.get(stage) ?? time));
+  }
+  const events = providerEvents.map((event) => ({
+    time: trackingTime(event),
+    description: (event.description ?? "").slice(0, 2000),
+    location: (event.location ?? "").slice(0, 500),
+  }));
   const unique = [...new Map(events.map((e) => [JSON.stringify(e), e])).values()]
     .sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
     .slice(0, 50);
@@ -276,12 +319,15 @@ export function normalizeTracking(raw: unknown) {
     parsed.track_info?.tracking?.providers
       ?.map((p) => Date.parse(p.latest_sync_time ?? ""))
       .filter(Number.isFinite) ?? [];
-  const eventAt = Math.max(...unique.map((e) => e.time ?? 0), ...syncTimes, 0) || undefined;
+  const eventAt =
+    Math.max(...unique.map((e) => e.time ?? 0), ...milestones.values(), ...syncTimes, 0) ||
+    undefined;
   return {
     number: parsed.number,
     carrier: parsed.carrier,
     status: parsed.track_info?.latest_status?.status ?? "NotFound",
     events: unique,
+    ...(milestones.size ? { milestones: Object.fromEntries(milestones) } : {}),
     eventAt,
   };
 }
