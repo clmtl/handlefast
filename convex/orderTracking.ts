@@ -5,7 +5,10 @@ import { type ActionCtx, action, env, internalAction, internalMutation } from ".
 import { requireShopMembership } from "./lib/authorization";
 import { shipmentFields, trackingUpdate } from "./lib/commerceModel";
 import { normalizeTracking, track17 } from "./lib/commerceProviders";
-import { enabledTrackingDomains } from "./lib/storefrontTrackingShops";
+import {
+  enabledTrackingDomains,
+  isCompletedStorefrontShipment,
+} from "./lib/storefrontTrackingShops";
 
 export const claimManual = internalMutation({
   args: { shipmentId: v.id("orderShipments") },
@@ -21,7 +24,7 @@ export const claimManual = internalMutation({
       !row.active ||
       connection?.status !== "active" ||
       connection.generation !== row.generation ||
-      (row.manualRefreshUntil ?? 0) > Date.now()
+      Math.max(row.manualRefreshUntil ?? 0, row.storefrontRefreshUntil ?? 0) > Date.now()
     )
       throw new ConvexError("TrackingUnavailable");
     await ctx.db.patch(shipmentId, { manualRefreshUntil: Date.now() + 60_000 });
@@ -157,17 +160,18 @@ export const queueStorefrontBackfill = internalMutation({
   args: {
     domain: v.string(),
     placedSince: v.number(),
-    orderNames: v.optional(v.array(v.string())),
+    orderNames: v.array(v.string()),
     cursor: v.union(v.string(), v.null()),
   },
   handler: async (ctx, { domain, placedSince, orderNames, cursor }) => {
     if (
-      !enabledTrackingDomains(env.STOREFRONT_TRACKING_AUTO_REGISTER).some(
+      !enabledTrackingDomains(env.STOREFRONT_TRACKING_PILOT).some(
         (enabled) => enabled === domain,
       ) ||
       !env.TRACK17_API_KEY
     )
       throw new ConvexError("StorefrontTrackingDisabled");
+    if (!orderNames.length) throw new ConvexError("StorefrontBackfillRequiresOrders");
     const connection = await ctx.db
       .query("shopifyConnections")
       .withIndex("by_domain", (q) => q.eq("domain", domain))
@@ -182,13 +186,14 @@ export const queueStorefrontBackfill = internalMutation({
         q.eq("connectionId", connection._id).eq("active", true).eq("autoTrackAt", undefined),
       )
       .paginate({ numItems: 40, cursor });
-    const selected = orderNames && new Set(orderNames);
+    const selected = new Set(orderNames);
     const now = Date.now();
     let queued = 0;
     for (const shipment of page.page) {
       if (
         shipment.generation !== connection.generation ||
-        ["Delivered", "Returned"].includes(shipment.status)
+        shipment.registered ||
+        isCompletedStorefrontShipment(shipment.status)
       )
         continue;
       const order = await ctx.db.get("shopifyOrders", shipment.orderId);
@@ -198,10 +203,13 @@ export const queueStorefrontBackfill = internalMutation({
         order.generation !== connection.generation ||
         order.cancelled ||
         order.placedAt < placedSince ||
-        (selected && !selected.has(order.name))
+        !selected.has(order.name)
       )
         continue;
-      await ctx.db.patch("orderShipments", shipment._id, { autoTrackAt: now });
+      await ctx.db.patch("orderShipments", shipment._id, {
+        autoTrackAt: now,
+        storefrontTrackingRequestedAt: now,
+      });
       queued++;
     }
     return { queued, cursor: page.isDone ? null : page.continueCursor };
@@ -229,14 +237,29 @@ export const claimStorefront = internalMutation({
           .lte("autoTrackAt", now),
       )
       .take(40);
+    const claimed = [];
     for (const row of shipments) {
+      if (
+        row.generation !== connection.generation ||
+        isCompletedStorefrontShipment(row.status) ||
+        (!row.registered && row.storefrontTrackingRequestedAt === undefined)
+      ) {
+        // Old automatic queues are not evidence that a customer requested tracking.
+        await ctx.db.patch("orderShipments", row._id, { autoTrackAt: undefined });
+        continue;
+      }
+      const leaseUntil = Math.max(row.manualRefreshUntil ?? 0, row.storefrontRefreshUntil ?? 0);
+      if (leaseUntil > now) {
+        await ctx.db.patch("orderShipments", row._id, { autoTrackAt: leaseUntil });
+        continue;
+      }
       await ctx.db.patch("orderShipments", row._id, {
-        autoTrackAt: row.generation === connection.generation ? now + 15 * 60_000 : undefined,
+        autoTrackAt: now + 15 * 60_000,
+        storefrontRefreshUntil: now + 2 * 60_000,
       });
+      claimed.push(row);
     }
-    return shipments.filter(
-      (row) => row.generation === connection.generation && (row.manualRefreshUntil ?? 0) <= now,
-    );
+    return claimed;
   },
 });
 
@@ -246,7 +269,8 @@ export const finishStorefront = internalMutation({
     const row = await ctx.db.get("orderShipments", shipmentId);
     if (!row?.active || row.generation !== generation) return;
     await ctx.db.patch("orderShipments", shipmentId, {
-      autoTrackAt: ["Delivered", "Returned"].includes(row.status)
+      storefrontRefreshUntil: undefined,
+      autoTrackAt: isCompletedStorefrontShipment(row.status)
         ? undefined
         : Date.now() + (row.events.length ? 6 * 60 : 15) * 60_000,
     });
@@ -258,7 +282,7 @@ export const refreshStorefront = internalAction({
   handler: async (ctx, { domain }) => {
     const key = env.TRACK17_API_KEY;
     if (!key) return;
-    const domains = enabledTrackingDomains(env.STOREFRONT_TRACKING_AUTO_REGISTER);
+    const domains = enabledTrackingDomains(env.STOREFRONT_TRACKING_PILOT);
     await Promise.all(
       domains
         .filter((enabled) => !domain || domain === enabled)

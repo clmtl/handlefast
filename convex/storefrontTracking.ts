@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { env, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { normalizedEmail } from "./lib/commerceModel";
+import { isCompletedStorefrontShipment } from "./lib/storefrontTrackingShops";
 
 const requestLimit = 60;
 const windowMs = 60_000;
@@ -75,7 +76,7 @@ export const lookup = internalMutation({
         return { kind: "missing" } as const;
       return {
         kind: "parcels",
-        parcels: [parcelView(shipment)],
+        parcels: [await requestParcel(ctx, shipment, now)],
         destination: order.destination,
       } as const;
     }
@@ -118,13 +119,29 @@ export const lookup = internalMutation({
       return { kind: order.fulfillmentStatus === "FULFILLED" ? "noTracking" : "pending" } as const;
     return {
       kind: "parcels",
-      parcels: parcels.map((row) => parcelView(row, order.placedAt)),
+      parcels: await Promise.all(
+        parcels.map((row) => requestParcel(ctx, row, now, order.placedAt)),
+      ),
       destination: order.destination,
     } as const;
   },
 });
 
-function parcelView(shipment: Doc<"orderShipments">, placedAt?: number) {
+async function requestParcel(
+  ctx: MutationCtx,
+  shipment: Doc<"orderShipments">,
+  now: number,
+  placedAt?: number,
+) {
+  let requested = shipment.storefrontTrackingRequestedAt !== undefined;
+  if (env.TRACK17_API_KEY && !isCompletedStorefrontShipment(shipment.status)) {
+    if (!requested && !shipment.registered) {
+      await ctx.db.patch(shipment._id, { autoTrackAt: now, storefrontTrackingRequestedAt: now });
+      requested = true;
+    } else if (shipment.autoTrackAt === undefined) {
+      await ctx.db.patch(shipment._id, { autoTrackAt: now });
+    }
+  }
   const lastEventAt = Math.max(
     0,
     ...shipment.events.map(({ time }) => time ?? 0),
@@ -133,6 +150,8 @@ function parcelView(shipment: Doc<"orderShipments">, placedAt?: number) {
   return {
     number: shipment.number,
     status: shipment.status,
+    awaitingCarrier:
+      requested && !lastEventAt && ["Unavailable", "NotFound"].includes(shipment.status),
     placedAt,
     milestones: shipment.milestones,
     lastEventAt,

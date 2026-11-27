@@ -99,6 +99,8 @@ export const shipmentFields = {
   carrier: v.optional(v.number()),
   registered: v.boolean(),
   manualRefreshUntil: v.optional(v.number()),
+  storefrontRefreshUntil: v.optional(v.number()),
+  storefrontTrackingRequestedAt: v.optional(v.number()),
   autoTrackAt: v.optional(v.number()),
   nextAttemptAt: v.number(),
   status: v.string(),

@@ -21,7 +21,6 @@ const app = defineApp({
     COMMERCE_ENCRYPTION_KEY: v.optional(v.string()),
     TRACK17_API_KEY: v.optional(v.string()),
     STOREFRONT_TRACKING_PILOT: v.optional(v.string()),
-    STOREFRONT_TRACKING_AUTO_REGISTER: v.optional(v.string()),
   },
 });
 

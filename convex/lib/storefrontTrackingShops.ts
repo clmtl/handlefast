@@ -57,6 +57,10 @@ export const storefrontTrackingShops = [
 
 export type StorefrontTrackingShop = (typeof storefrontTrackingShops)[number];
 
+export function isCompletedStorefrontShipment(status: string) {
+  return status === "Delivered" || status === "Returned";
+}
+
 export function enabledTrackingDomains(setting: string | undefined) {
   const domains = new Set(setting?.split(",").map((domain) => domain.trim()));
   return storefrontTrackingShops
