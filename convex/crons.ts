@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 crons.interval(
-  "subscribe and refresh new storefront parcels",
+  "refresh requested storefront parcels",
   { minutes: 1 },
   internal.orderTracking.refreshStorefront,
   {},

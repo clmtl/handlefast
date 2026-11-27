@@ -34,6 +34,7 @@ export function trackingResult(
   parcels: readonly {
     number: string;
     status: string;
+    awaitingCarrier?: boolean;
     placedAt?: number;
     lastEventAt: number;
     milestones?: Partial<
@@ -63,7 +64,7 @@ export function trackingResult(
   return `<section class="results" aria-labelledby="result-title">
     <h2 id="result-title">${parcels.length === 1 ? text.oneParcel : text.parcels}</h2>
     ${parcels
-      .map(({ status, number, placedAt, milestones, lastEventAt }) => {
+      .map(({ status, awaitingCarrier, number, placedAt, milestones, lastEventAt }) => {
         const pickup =
           status === "AvailableForPickup" ||
           Boolean(milestones?.pickup && !milestones.outForDelivery);
@@ -91,7 +92,7 @@ export function trackingResult(
         return `<article class="parcel">
         <div class="parcel-heading">
           <div><h3>${text.trackingNumber}</h3><p class="number">${escapeHtml(number)}</p></div>
-          <span class="parcel-status">${text[statusLabels.get(status) ?? "waiting"]}</span>
+          <span class="parcel-status">${text[awaitingCarrier ? "starting" : (statusLabels.get(status) ?? "waiting")]}</span>
         </div>
         <ol class="progress" aria-label="${text.progress}">${steps
           .map(({ label, time }, index) => {

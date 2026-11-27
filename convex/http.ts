@@ -76,6 +76,10 @@ for (const shop of storefrontTrackingShops) {
       if (!number) return renderStorefrontTracking(ctx, shop, params);
       if (!trackingNumberPattern.test(number))
         return renderStorefrontTracking(ctx, shop, params, undefined, "invalidTracking");
+      const prefetch = ["Sec-Purpose", "Purpose", "X-Purpose", "X-Moz"].some((header) =>
+        /\b(?:prefetch|prerender|preview)\b/i.test(req.headers.get(header) ?? ""),
+      );
+      if (prefetch) return renderStorefrontTracking(ctx, shop, params);
       return renderStorefrontTracking(ctx, shop, params, { mode: "tracking", number });
     }),
   });
