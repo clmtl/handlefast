@@ -64,6 +64,7 @@ import type * as lib_shopifyGuidedModel from "../lib/shopifyGuidedModel.js";
 import type * as lib_shopifyOAuth from "../lib/shopifyOAuth.js";
 import type * as lib_shopifyWebhooks from "../lib/shopifyWebhooks.js";
 import type * as lib_slugs from "../lib/slugs.js";
+import type * as lib_storefrontTrackingLanguage from "../lib/storefrontTrackingLanguage.js";
 import type * as lib_storefrontTrackingPage from "../lib/storefrontTrackingPage.js";
 import type * as lib_webhookSignatures from "../lib/webhookSignatures.js";
 import type * as onboarding from "../onboarding.js";
@@ -143,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "lib/shopifyOAuth": typeof lib_shopifyOAuth;
   "lib/shopifyWebhooks": typeof lib_shopifyWebhooks;
   "lib/slugs": typeof lib_slugs;
+  "lib/storefrontTrackingLanguage": typeof lib_storefrontTrackingLanguage;
   "lib/storefrontTrackingPage": typeof lib_storefrontTrackingPage;
   "lib/webhookSignatures": typeof lib_webhookSignatures;
   onboarding: typeof onboarding;
