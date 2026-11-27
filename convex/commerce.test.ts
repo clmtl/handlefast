@@ -334,28 +334,30 @@ describe("support order context", () => {
     );
   });
 });
-test("storefront pilot restricts access to selected parcels from La Combi Bébé", async () => {
+test("storefront tracking verifies checkout email, scopes parcels, and limits public history", async () => {
   const t = backend();
   const path = "/storefront/tracking-pilot";
-  const code = "test-access-code";
-  const search = (tracking: string, accessCode = code) =>
+  const search = (fields: Record<string, string>) =>
     t.fetch(path, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ tracking, code: accessCode }).toString(),
+      body: new URLSearchParams(fields).toString(),
     });
 
   expect((await t.fetch(path)).status).toBe(404);
-  vi.stubEnv("STOREFRONT_TRACKING_PILOT", `${await sha256(code)}:TRACK1234:TRACK5678`);
-  expect((await search("TRACK1234", "incorrect")).status).toBe(403);
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", "8vvazz-uj.myshopify.com");
+  expect(await (await t.fetch(path)).text()).not.toContain("Code d’accès");
 
   const pilot = await workspace(t, "tracking-pilot");
   const other = await workspace(t, "other-tracking-shop");
   const { row } = await connect(t, pilot, "8vvazz-uj.myshopify.com");
   const { row: otherRow } = await connect(t, other, "other.myshopify.com", "b".repeat(32));
-  const [pilotOrder, otherOrder] = [order(), order()];
-  pilotOrder.tracking = pilotOrder.tracking.slice(0, 1);
-  otherOrder.tracking = otherOrder.tracking.slice(1);
+  const pilotOrder = order();
+  const otherOrder = {
+    ...order(),
+    name: "#4321",
+    tracking: [{ number: "OUTSIDE1234", company: "Carrier", fulfillmentId: "f1" }],
+  };
   await t.mutation(internal.orderContext.saveLookup, {
     connectionId: row._id,
     generation: row.generation,
@@ -381,16 +383,42 @@ test("storefront pilot restricts access to selected parcels from La Combi Bébé
       ],
     });
   });
-  expect((await search("TRACK5678")).status).toBe(404);
-  expect((await search("OTHER1234")).status).toBe(404);
-  const response = await search("track1234");
-  expect(response.status).toBe(200);
-  expect(response.headers.get("cache-control")).toBe("no-store");
-  const html = await response.text();
-  expect(html).toContain("Livré");
-  expect(html).toContain("&lt;script&gt;Livraison&lt;/script&gt;");
-  expect(html).not.toContain("Private");
-  expect(html).not.toContain(pilotOrder.email);
+
+  expect((await search({ mode: "tracking", number: "OUTSIDE1234" })).status).toBe(404);
+  expect((await search({ mode: "order", number: "4321", email: otherOrder.email })).status).toBe(
+    404,
+  );
+  expect(
+    (await search({ mode: "order", number: "#1234", email: "wrong@example.com" })).status,
+  ).toBe(404);
+
+  const tracked = await search({ mode: "tracking", number: "track1234" });
+  expect(tracked.status).toBe(200);
+  expect(tracked.headers.get("cache-control")).toBe("no-store");
+  const publicHtml = await tracked.text();
+  expect(publicHtml).toContain("Livré");
+  expect(publicHtml).toContain("Dernière mise à jour du transporteur");
+  expect(publicHtml).not.toContain("TRACK5678");
+  expect(publicHtml).not.toContain("&lt;script&gt;");
+
+  const matched = await search({ mode: "order", number: "1234", email: "CUSTOMER@EXAMPLE.COM" });
+  expect(matched.status).toBe(200);
+  const orderHtml = await matched.text();
+  expect(orderHtml).toContain("Vos colis");
+  expect(orderHtml).toContain("TRACK5678");
+  expect(orderHtml).toContain("&lt;script&gt;Livraison&lt;/script&gt;");
+  expect(orderHtml).not.toContain("Private");
+  expect(orderHtml).not.toContain(pilotOrder.email);
+
+  await t.run(async (ctx) => {
+    const limit = await ctx.db
+      .query("storefrontTrackingLimits")
+      .withIndex("by_shopId", (q) => q.eq("shopId", pilot.shopId))
+      .unique();
+    if (!limit) throw new Error("Missing lookup limit");
+    await ctx.db.patch("storefrontTrackingLimits", limit._id, { count: 60 });
+  });
+  expect((await search({ mode: "tracking", number: "TRACK1234" })).status).toBe(429);
 });
 
 describe("shipment updates", () => {

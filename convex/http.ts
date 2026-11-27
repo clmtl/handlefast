@@ -4,9 +4,10 @@ import { internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
 import { shopifyWebhook, trackingWebhook } from "./commerceHttp";
-import { equalSignature, sha256 } from "./lib/commerceSecrets";
-import { trackingPage, trackingResult } from "./lib/storefrontTrackingPage";
+import { normalizedEmail } from "./lib/commerceModel";
+import { trackingMessage, trackingPage, trackingResult } from "./lib/storefrontTrackingPage";
 import { verifyWebhookSignature } from "./lib/webhookSignatures";
+import { storefrontPilotDomain } from "./storefrontTracking";
 import { takeoutMessage } from "./takeoutHttp";
 
 const http = httpRouter();
@@ -22,40 +23,79 @@ http.route({
   path: storefrontTrackingPath,
   method: "GET",
   handler: httpAction(async () =>
-    env.STOREFRONT_TRACKING_PILOT ? trackingPage() : new Response(null, { status: 404 }),
+    env.STOREFRONT_TRACKING_PILOT === storefrontPilotDomain
+      ? trackingPage()
+      : new Response(null, { status: 404 }),
   ),
 });
 http.route({
   path: storefrontTrackingPath,
   method: "POST",
   handler: httpAction(async (ctx, req) => {
-    const config = env.STOREFRONT_TRACKING_PILOT;
-    if (!config) return new Response(null, { status: 404 });
+    if (env.STOREFRONT_TRACKING_PILOT !== storefrontPilotDomain)
+      return new Response(null, { status: 404 });
     if (req.headers.get("content-type")?.split(";")[0] !== "application/x-www-form-urlencoded")
       return new Response(null, { status: 415 });
 
     const body = await readWebhookBody(req);
     if (body === null) return new Response(null, { status: 413 });
     const form = new URLSearchParams(body);
-    const code = form.get("code")?.trim() ?? "";
-    const [digest, ...pilotNumbers] = config.split(":");
-    if (!code || code.length > 128 || !equalSignature(await sha256(code), digest))
-      return trackingPage('<p class="message" role="alert">Code d’accès incorrect.</p>', 403);
+    const mode = form.get("mode");
+    const number = form.get("number")?.trim() ?? "";
+    const email = normalizedEmail(form.get("email"));
+    if (mode !== "tracking" && mode !== "order")
+      return trackingPage(trackingMessage("Choisissez un mode de recherche.", true), 400);
+    if (mode === "tracking" && !/^[a-z0-9 _-]{3,128}$/i.test(number))
+      return trackingPage(trackingMessage("Vérifiez le numéro de suivi.", true), 400);
+    if (
+      mode === "order" &&
+      (!number.replace(/^#/, "") ||
+        number.length > 64 ||
+        /\p{Cc}/u.test(number) ||
+        !email ||
+        email.length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    )
+      return trackingPage(
+        trackingMessage("Vérifiez le numéro de commande et l’adresse e-mail.", true),
+        400,
+      );
 
-    const number = form.get("tracking")?.trim().toUpperCase() ?? "";
-    if (!/^[A-Z0-9-]{6,64}$/.test(number))
-      return trackingPage('<p class="message" role="alert">Vérifie le numéro de suivi.</p>', 400);
-
-    const shipment = pilotNumbers.includes(number)
-      ? await ctx.runQuery(internal.storefrontTracking.lookup, { number })
-      : null;
-    return shipment
-      ? trackingPage(trackingResult(shipment), 200, number)
-      : trackingPage(
-          '<p class="message" role="alert">Aucun suivi disponible pour ce numéro.</p>',
-          404,
-          number,
+    const search =
+      mode === "order" && email
+        ? ({ mode, number, email } as const)
+        : ({ mode: "tracking", number } as const);
+    const result = await ctx.runMutation(internal.storefrontTracking.lookup, { search });
+    switch (result.kind) {
+      case "limited":
+        return trackingPage(
+          trackingMessage("Trop de recherches. Réessayez dans une minute.", true),
+          429,
         );
+      case "missing":
+        return trackingPage(
+          trackingMessage(
+            mode === "order"
+              ? "Aucune commande trouvée avec ce numéro et cette adresse e-mail."
+              : "Aucun colis trouvé avec ce numéro de suivi.",
+            true,
+          ),
+          404,
+        );
+      case "pending":
+        return trackingPage(trackingMessage("Votre commande est en préparation."), 200);
+      case "noTracking":
+        return trackingPage(
+          trackingMessage(
+            "Votre commande a été expédiée. Le numéro de suivi n’est pas encore disponible.",
+          ),
+          200,
+        );
+      case "cancelled":
+        return trackingPage(trackingMessage("Votre commande a été annulée."), 200);
+      case "parcels":
+        return trackingPage(trackingResult(result.parcels), 200);
+    }
   }),
 });
 
