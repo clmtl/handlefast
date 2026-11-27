@@ -1,6 +1,15 @@
+{%- assign scheme = section.settings.color_scheme | default: settings.color_schemes['scheme-1'] -%}
+{%- assign button_color = scheme.settings.primary_button_background
+  | default: scheme.settings.button
+  | default: scheme.settings.solid_button_background
+  | default: settings.color_button
+  | default: settings.primary_button_background
+  | default: settings.colors_solid_button_background
+  | default: settings.colors_accent_1
+-%}
 <iframe
   title="HandleFast"
-  src="https://frugal-gecko-721.convex.site/storefront/tracking-pilot?lang={{ request.locale.iso_code | url_encode }}"
+  src="https://frugal-gecko-721.convex.site/storefront/tracking-pilot?lang={{ request.locale.iso_code | url_encode }}{% if button_color != blank %}&amp;accent={{ button_color | color_to_hex | url_encode }}{% endif %}"
   referrerpolicy="no-referrer"
-  style="display:block;width:100%;min-height:820px;border:0"
+  style="display:block;width:100%;min-height:1100px;border:0"
 ></iframe>

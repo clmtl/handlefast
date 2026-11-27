@@ -5,6 +5,7 @@ import { env, httpAction } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
 import { shopifyWebhook, trackingWebhook } from "./commerceHttp";
 import { normalizedEmail } from "./lib/commerceModel";
+import { deliveryMap } from "./lib/storefrontDeliveryMap";
 import { storefrontLanguage } from "./lib/storefrontTrackingLanguage";
 import { trackingMessage, trackingPage, trackingResult } from "./lib/storefrontTrackingPage";
 import { verifyWebhookSignature } from "./lib/webhookSignatures";
@@ -23,11 +24,12 @@ const storefrontTrackingPath = "/storefront/tracking-pilot";
 http.route({
   path: storefrontTrackingPath,
   method: "GET",
-  handler: httpAction(async (_ctx, req) =>
-    env.STOREFRONT_TRACKING_PILOT === storefrontPilotDomain
-      ? trackingPage(storefrontLanguage(new URL(req.url).searchParams.get("lang")))
-      : new Response(null, { status: 404 }),
-  ),
+  handler: httpAction(async (_ctx, req) => {
+    if (env.STOREFRONT_TRACKING_PILOT !== storefrontPilotDomain)
+      return new Response(null, { status: 404 });
+    const params = new URL(req.url).searchParams;
+    return trackingPage(storefrontLanguage(params.get("lang")), "", 200, params.get("accent"));
+  }),
 });
 http.route({
   path: storefrontTrackingPath,
@@ -41,10 +43,12 @@ http.route({
     const body = await readWebhookBody(req);
     if (body === null) return new Response(null, { status: 413 });
     const form = new URLSearchParams(body);
-    const language = storefrontLanguage(new URL(req.url).searchParams.get("lang"));
+    const params = new URL(req.url).searchParams;
+    const language = storefrontLanguage(params.get("lang"));
+    const accent = params.get("accent");
     const { text } = language;
     const message = (content: keyof typeof text, status = 200) =>
-      trackingPage(language, trackingMessage(text[content], status >= 400), status);
+      trackingPage(language, trackingMessage(text[content], status >= 400), status, accent);
     const mode = form.get("mode");
     const number = form.get("number")?.trim() ?? "";
     const email = normalizedEmail(form.get("email"));
@@ -77,7 +81,12 @@ http.route({
       case "cancelled":
         return message(result.kind);
       case "parcels":
-        return trackingPage(language, trackingResult(language, result.parcels));
+        return trackingPage(
+          language,
+          trackingResult(language, result.parcels, await deliveryMap(result.destination)),
+          200,
+          accent,
+        );
     }
   }),
 });

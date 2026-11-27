@@ -115,6 +115,7 @@ export const lookup = internalMutation({
     return {
       kind: "parcels",
       parcels: parcels.map((row) => parcelView(row, order.placedAt)),
+      destination: order.destination,
     } as const;
   },
 });

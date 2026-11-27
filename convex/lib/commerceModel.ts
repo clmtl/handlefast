@@ -82,6 +82,7 @@ export const trackingEvent = v.object({
 const trackingMilestones = v.object({
   prepared: v.optional(v.number()),
   transit: v.optional(v.number()),
+  localCourier: v.optional(v.number()),
   pickup: v.optional(v.number()),
   outForDelivery: v.optional(v.number()),
   delivered: v.optional(v.number()),
@@ -98,6 +99,7 @@ export const shipmentFields = {
   carrier: v.optional(v.number()),
   registered: v.boolean(),
   manualRefreshUntil: v.optional(v.number()),
+  autoTrackAt: v.optional(v.number()),
   nextAttemptAt: v.number(),
   status: v.string(),
   events: v.array(trackingEvent),

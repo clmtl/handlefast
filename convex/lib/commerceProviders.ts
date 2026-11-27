@@ -294,7 +294,15 @@ export function normalizeTracking(raw: unknown) {
     })) ?? []),
     ...providerEvents,
   ]) {
-    const stage = milestoneStages.get(event.stage ?? "");
+    const description = event.description ?? "";
+    const localHandoff =
+      !/\b(?:not|awaiting|waiting|pending|expected|will|to be|pas encore|en attente|en attente de|pendiente)\b/i.test(
+        description,
+      ) &&
+      /(?:handed over|transferred|delivered|passed) to (?:the )?(?:local|last[ -]mile|final[ -]mile) (?:carrier|courier|delivery partner)|remis au transporteur local|transmis au livreur local|entregado al transportista local/i.test(
+        description,
+      );
+    const stage = localHandoff ? "localCourier" : milestoneStages.get(event.stage ?? "");
     const time = trackingTime(event);
     if (stage && time !== null)
       milestones.set(stage, Math.min(time, milestones.get(stage) ?? time));

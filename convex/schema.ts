@@ -121,6 +121,7 @@ export default defineSchema({
   }).index("by_shopId", ["shopId"]),
   orderShipments: defineTable(shipmentFields)
     .index("by_connectionId_and_number", ["connectionId", "number"])
+    .index("by_connectionId_and_active_and_autoTrackAt", ["connectionId", "active", "autoTrackAt"])
     .index("by_orderId", ["orderId"])
     .index("by_number", ["number"])
     .index("by_connectionId", ["connectionId"])

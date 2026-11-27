@@ -399,6 +399,9 @@ test("storefront tracking verifies checkout email, scopes parcels, and renders l
   const publicHtml = await tracked.text();
   expect(publicHtml).toContain("Livré");
   expect(publicHtml).toContain("Dernière mise à jour");
+  expect(publicHtml).toContain("Chez le livreur");
+  expect(publicHtml).toContain('<p class="method-separator">ou</p>');
+  expect(publicHtml).not.toContain("openstreetmap.org/export");
   expect(publicHtml).toContain('aria-current="step"');
   expect(publicHtml).toContain("<time datetime=");
   expect(publicHtml).not.toContain("TRACK5678");
@@ -430,6 +433,59 @@ test("storefront tracking verifies checkout email, scopes parcels, and renders l
     await ctx.db.patch("storefrontTrackingLimits", limit._id, { count: 60 });
   });
   expect((await search({ mode: "tracking", number: "TRACK1234" })).status).toBe(429);
+});
+
+test("an imported shipment starts tracking before any support message", async () => {
+  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", "8vvazz-uj.myshopify.com");
+  vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
+  const t = backend();
+  const shop = await workspace(t, "automatic-storefront");
+  const { row } = await connect(t, shop, "8vvazz-uj.myshopify.com");
+  const imported = order();
+  imported.tracking = imported.tracking.slice(0, 1);
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [imported],
+  });
+  const deliveredAt = new Date(Date.now()).toISOString();
+  const calls = vi.fn(async (url: string) =>
+    Response.json({
+      code: 0,
+      data: {
+        accepted: [
+          {
+            number: "TRACK1234",
+            carrier: 3011,
+            ...(url.endsWith("/gettrackinfo")
+              ? {
+                  track_info: {
+                    latest_status: { status: "Delivered" },
+                    latest_event: {
+                      time_utc: deliveredAt,
+                      stage: "Delivered",
+                      description: "Delivered",
+                    },
+                  },
+                }
+              : {}),
+          },
+        ],
+        rejected: [],
+      },
+    }),
+  );
+  vi.stubGlobal("fetch", calls);
+  await t.action(internal.orderTracking.refreshStorefront, {});
+  const stored = await t.run((ctx) => ctx.db.query("orderShipments").first());
+  expect(stored).toMatchObject({
+    status: "Delivered",
+    registered: true,
+    milestones: { delivered: Date.now() },
+  });
+  expect(stored?.autoTrackAt).toBeUndefined();
+  await t.action(internal.orderTracking.refreshStorefront, {});
+  expect(calls).toHaveBeenCalledTimes(2);
 });
 
 describe("shipment updates", () => {
