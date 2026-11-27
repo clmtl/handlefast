@@ -15,11 +15,12 @@ import {
   matchesRule,
   planValidator,
   renderAutomaticReply,
+  signSupportReply,
   suppressAutoResponse,
   validMailbox,
   validMessageId,
 } from "./lib/automaticReplyPolicy";
-import { orderReferences } from "./lib/commerceModel";
+import { emailOrderReferences } from "./lib/commerceModel";
 import { humanReviewContext } from "./lib/humanReviewContext";
 import { replyAlias } from "./lib/inboundEmailRoutes";
 import { manualReplyTarget } from "./lib/manualReply";
@@ -239,12 +240,14 @@ export const approveManual = mutation({
   handler: async (ctx, { receiptId, text, to, from }) => {
     const receipt = await ctx.db.get(receiptId);
     if (!receipt) throw new ConvexError("EmailUnavailable");
-    const { membership, profile } = await requireShopMembership(ctx, receipt.shopId);
+    const { membership, profile, shop } = await requireShopMembership(ctx, receipt.shopId);
     if (membership.role !== "owner") throw new ConvexError("Forbidden");
     const target = await manualReplyTarget(ctx, receipt);
     const body = text.trim();
     if (!target || !body || body.length > 6000 || target.to !== to || target.from !== from)
       throw new ConvexError("ManualReplyUnavailable");
+    if (signSupportReply(body, shop.supportSignatureName) !== body)
+      throw new ConvexError("SignatureChanged");
     const existing = await ctx.db
       .query("automaticReplies")
       .withIndex("by_receiptId", (q) => q.eq("receiptId", receiptId))
@@ -409,9 +412,8 @@ export const prepared = internalMutation({
       statuses: cached?.shipments.filter((s) => s.active).map((s) => s.status) ?? [],
       preparing,
       missingOrder: !order,
-      hasReference:
-        orderReferences(`${info.message.subject ?? ""}\n${info.message.text ?? ""}`).length > 0,
-      shopName: info.shop.name,
+      hasReference: emailOrderReferences(info.message).length > 0,
+      shopName: info.shop.supportSignatureName ?? info.shop.name,
     });
     if (!text) {
       await stop(ctx, row, "human_required");

@@ -490,7 +490,7 @@ test("freezes recipient, thread headers, subject and response; dispatch is claim
       "Auto-Submitted": "auto-replied",
     },
   });
-  expect(r.payload?.text).toContain("référence");
+  expect(r.payload?.text).toContain("communiquer son numéro");
   const claim = await f.t.mutation(internal.automaticReplies.claimSend, { id: r._id });
   expect(claim).not.toBeNull();
   expect(await f.t.mutation(internal.automaticReplies.claimSend, { id: r._id })).toBeNull();

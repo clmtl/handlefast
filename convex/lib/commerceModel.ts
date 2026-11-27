@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { emailBodyText } from "./emailTranslationPolicy";
 
 export const SHOPIFY_API_VERSION = "2026-10";
 export const connectionFields = {
@@ -31,6 +32,7 @@ export const orderFields = {
   gid: v.string(),
   name: v.string(),
   email: v.optional(v.string()),
+  recipientName: v.optional(v.string()),
   placedAt: v.number(),
   sourceUpdatedAt: v.number(),
   syncedAt: v.number(),
@@ -56,6 +58,7 @@ export const orderData = v.object({
   gid: orderFields.gid,
   name: orderFields.name,
   email: orderFields.email,
+  recipientName: orderFields.recipientName,
   placedAt: orderFields.placedAt,
   sourceUpdatedAt: orderFields.sourceUpdatedAt,
   financialStatus: orderFields.financialStatus,
@@ -125,6 +128,20 @@ export function shopDomain(input: string) {
 export function normalizedEmail(input: string | undefined | null) {
   return input?.trim().toLowerCase() || undefined;
 }
+export function normalizedRecipientName(input?: string | null) {
+  const name = input
+    ?.normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+  return name &&
+    name.length <= 120 &&
+    /^\p{L}+(?:['’-]\p{L}+)*(?: \p{L}+(?:['’-]\p{L}+)*)+$/u.test(name)
+    ? name
+    : undefined;
+}
+
 export function orderReferences(text: string) {
   return [
     ...new Set(
@@ -132,16 +149,31 @@ export function orderReferences(text: string) {
         text
           .slice(0, 30_000)
           .matchAll(
-            /(?:#|(?:commande|order)\s*(?:n[°o.]?\s*)?[:#-]?\s*)([A-Z0-9][A-Z0-9-]{2,30})/gi,
+            /(?:#|(?:commande|order|pedido|bestellung)\s*(?:(?:n[°ºo.]|no\.|nummer|number|nr\.?)\s*)?[:#-]?\s*)([A-Z0-9][A-Z0-9-]{2,30})/gi,
           ),
-        (m) =>
-          m[0].includes("#") || /\d/.test(m[1]) || m[1] === m[1].toUpperCase()
-            ? m[1].toUpperCase()
-            : "",
+        (m) => (/\d/.test(m[1]) ? m[1].toUpperCase() : ""),
       ).filter(Boolean),
     ),
   ].slice(0, 10);
 }
 export function orderName(value: string) {
   return value.replace(/^#/, "").toUpperCase();
+}
+
+export function emailOrderReferences(message: {
+  subject?: string;
+  text?: string;
+  snippet?: string;
+  html?: string;
+}) {
+  const subject = message.subject?.trim() ?? "";
+  const numberOnly = /^(?:(?:re|fwd|tr|aw):\s*)*#?(\d{3,20})$/i.exec(subject)?.[1];
+  return [
+    ...new Set([
+      ...(numberOnly ? [numberOnly] : []),
+      ...orderReferences(
+        `${subject}\n${emailBodyText(message.text, message.html) || message.snippet || ""}`,
+      ),
+    ]),
+  ];
 }

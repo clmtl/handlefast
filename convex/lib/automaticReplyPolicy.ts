@@ -161,7 +161,7 @@ const copy = {
   fr: {
     hello: "Bonjour,",
     reference:
-      "Pour retrouver votre commande, pourriez-vous nous transmettre sa référence ainsi que l’adresse email utilisée lors de l’achat ?",
+      "Pour que nous puissions vérifier où en est votre commande, pourriez-vous nous communiquer son numéro ?",
     details:
       "Pour examiner votre demande, pourriez-vous préciser l’article concerné et décrire le problème ou la modification souhaitée ? Une photo peut être utile si l’article présente un défaut.",
     resolved:
@@ -183,8 +183,7 @@ const copy = {
   },
   en: {
     hello: "Hello,",
-    reference:
-      "To find your order, could you send us its reference and the email address used for the purchase?",
+    reference: "Could you send us your order number so we can check its status?",
     details:
       "To review your request, could you specify the item concerned and describe the issue or the change you would like? A photo may help if the item has a defect.",
     resolved:
@@ -205,8 +204,7 @@ const copy = {
   },
   es: {
     hello: "Hola:",
-    reference:
-      "Para localizar tu pedido, ¿puedes facilitarnos su referencia y el correo electrónico utilizado al comprar?",
+    reference: "¿Podrías enviarnos el número de tu pedido para que podamos comprobar su estado?",
     details:
       "Para revisar tu solicitud, ¿puedes indicar el artículo afectado y describir el problema o el cambio que deseas? Una foto puede ayudar si el artículo tiene un defecto.",
     resolved:
@@ -228,7 +226,7 @@ const copy = {
   de: {
     hello: "Guten Tag,",
     reference:
-      "Damit wir Ihre Bestellung finden können, teilen Sie uns bitte die Bestellnummer und die beim Kauf verwendete E-Mail-Adresse mit.",
+      "Damit wir den Status Ihrer Bestellung prüfen können, teilen Sie uns bitte die Bestellnummer mit.",
     details:
       "Damit wir Ihre Anfrage prüfen können, nennen Sie uns bitte den betroffenen Artikel und beschreiben Sie das Problem oder die gewünschte Änderung. Bei einem Defekt kann ein Foto hilfreich sein.",
     resolved:
@@ -249,6 +247,21 @@ const copy = {
     },
   },
 };
+export function signSupportReply(text: string, name: string | undefined | null) {
+  const body = text.trim();
+  return body && name && body.split("\n").at(-1)?.trim() !== name ? `${body}\n\n${name}` : body;
+}
+
+export function orderIdentityDraft(language: keyof typeof copy, signature: string) {
+  const confirmation = {
+    fr: "Pour que nous puissions vous donner des nouvelles de la commande, pourriez-vous nous confirmer l’adresse email utilisée lors de l’achat ?",
+    en: "Before we can share an update, could you confirm the email address you used to place the order?",
+    es: "Para poder informarte sobre el pedido, ¿podrías confirmar la dirección de correo electrónico que utilizaste al comprar?",
+    de: "Damit wir Ihnen Auskunft zur Bestellung geben können, bestätigen Sie bitte die E-Mail-Adresse, die Sie beim Kauf verwendet haben.",
+  };
+  return `${copy[language].hello}\n\n${confirmation[language]}\n\n${copy[language].bye}\n${signature.replace(/[\r\n]/g, " ").slice(0, 100)}`;
+}
+
 export function renderAutomaticReply(
   plan: ReplyPlan,
   language: keyof typeof copy,

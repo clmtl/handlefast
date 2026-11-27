@@ -6,11 +6,12 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
 import {
   connectionFields,
+  emailOrderReferences,
   normalizedEmail,
+  normalizedRecipientName,
   orderData,
   orderFields,
   orderName,
-  orderReferences,
   shipmentFields,
 } from "./lib/commerceModel";
 import { ORDERS_QUERY, parseOrders, shopifyGraphql } from "./lib/commerceProviders";
@@ -52,6 +53,8 @@ export const forEmail = query({
       limited: v.boolean(),
       mode: v.union(v.literal("manual"), v.literal("automatic"), v.literal("none")),
       identityMatches: v.boolean(),
+      unmatchedReference: v.union(v.string(), v.null()),
+      matchedBy: v.union(v.literal("reference"), v.literal("email"), v.literal("name"), v.null()),
       shipments: v.array(shipmentDoc),
     }),
   ),
@@ -243,20 +246,64 @@ export async function cachedOrderContext(
       selected.placedAt <= Date.now() - 365 * 86_400_000)
   )
     selected = null;
-  let automatic = Boolean(!link && proactive && selected);
+  const references = emailOrderReferences(message);
+  const cutoff = Date.now() - 365 * 86_400_000;
+  let matchedBy: "reference" | "email" | "name" | null = null;
   if (!link && !proactive) {
-    const references = orderReferences(
-      `${message.subject ?? ""}\n${message.text ?? message.snippet ?? ""}`,
-    );
-    const matching = orders.filter(
-      (o) => references.includes(orderName(o.name)) && o.placedAt > Date.now() - 365 * 86_400_000,
-    );
-    // Require both the sender email and an explicit, unambiguous order reference.
-    if (references.length === 1 && matching.length === 1 && email) {
-      selected = matching[0];
-      automatic = true;
+    if (references.length === 1) {
+      const reference = references[0];
+      const names = [
+        ...new Set([reference, reference.toLowerCase()].flatMap((value) => [value, `#${value}`])),
+      ];
+      const matches = (
+        await Promise.all(
+          names.map((name) =>
+            ctx.db
+              .query("shopifyOrders")
+              .withIndex("by_shopId_and_generation_and_name", (q) =>
+                q
+                  .eq("shopId", receipt.shopId)
+                  .eq("generation", connection.generation)
+                  .eq("name", name),
+              )
+              .take(2),
+          ),
+        )
+      )
+        .flat()
+        .filter((order) => order.placedAt > cutoff);
+      if (matches.length === 1) {
+        selected = matches[0];
+        matchedBy = "reference";
+      }
+    } else if (!references.length) {
+      const recent = email ? orders.filter((order) => order.placedAt > cutoff) : [];
+      if (recent.length === 1) {
+        selected = recent[0];
+        matchedBy = "email";
+      } else if (!recent.length) {
+        const contact = shopifyContactAddress(message)
+          ? normalizedRecipientName(message.replyTo[0]?.name)
+          : normalizedRecipientName(message.from.name);
+        if (contact) {
+          const matches = await ctx.db
+            .query("shopifyOrders")
+            .withIndex("by_shopId_and_generation_and_recipient", (q) =>
+              q
+                .eq("shopId", receipt.shopId)
+                .eq("generation", connection.generation)
+                .eq("recipientName", contact),
+            )
+            .take(2);
+          if (matches.length === 1 && matches[0].placedAt > cutoff) {
+            selected = matches[0];
+            matchedBy = "name";
+          }
+        }
+      }
     }
   }
+  const automatic = Boolean(!link && selected && (matchedBy || proactive));
   const shipments = selected
     ? await ctx.db
         .query("orderShipments")
@@ -266,6 +313,8 @@ export async function cachedOrderContext(
   return {
     domain: connection.domain,
     selected,
+    matchedBy,
+    unmatchedReference: !link && !selected && references.length === 1 ? references[0] : null,
     candidates: orders.slice(0, 25),
     limited: orders.length > 25,
     mode: automatic ? ("automatic" as const) : link ? ("manual" as const) : ("none" as const),

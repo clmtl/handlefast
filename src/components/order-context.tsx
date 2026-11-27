@@ -50,16 +50,17 @@ export function OrderContext({
   const [results, setResults] = useState<Doc<"shopifyOrders">[]>([]);
   const [notice, setNotice] = useState("");
   const refreshed = useRef(false);
+  const unmatchedReference = context?.unmatchedReference;
   useEffect(() => {
-    if (!refreshOnOpen || !context?.canEdit || refreshed.current) return;
+    if ((!refreshOnOpen && !unmatchedReference) || !context?.canEdit || refreshed.current) return;
     refreshed.current = true;
     setBusy(true);
-    void lookup({ receiptId })
+    void lookup({ receiptId, name: unmatchedReference ?? undefined })
       .catch(() =>
         setError("Actualisation indisponible. Les informations affichées peuvent être anciennes."),
       )
       .finally(() => setBusy(false));
-  }, [context?.canEdit, lookup, receiptId, refreshOnOpen]);
+  }, [context?.canEdit, lookup, receiptId, refreshOnOpen, unmatchedReference]);
   async function perform(task: () => Promise<unknown>) {
     setBusy(true);
     setError("");
@@ -85,7 +86,14 @@ export function OrderContext({
             className={button}
             type="button"
             disabled={busy}
-            onClick={() => void perform(() => lookup({ receiptId }))}
+            onClick={() =>
+              void perform(() =>
+                lookup({
+                  receiptId,
+                  name: context.selected?.name ?? context.unmatchedReference ?? undefined,
+                }),
+              )
+            }
           >
             {busy ? "Chargement…" : "Actualiser"}
           </button>
@@ -113,7 +121,13 @@ export function OrderContext({
             <p className="text-sm text-muted-foreground">
               {new Date(selected.placedAt).toLocaleDateString()} ·{" "}
               {context.mode === "automatic"
-                ? "Associée par email et numéro de commande"
+                ? context.matchedBy === "reference"
+                  ? "Associée par numéro de commande"
+                  : context.matchedBy === "email"
+                    ? "Associée par adresse email"
+                    : context.matchedBy === "name"
+                      ? "Associée par nom"
+                      : "Associée automatiquement"
                 : "Association manuelle"}
             </p>
           </div>
