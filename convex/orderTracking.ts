@@ -154,8 +154,13 @@ export const apply = internalMutation({
 });
 
 export const queueStorefrontBackfill = internalMutation({
-  args: { domain: v.string(), placedSince: v.number(), cursor: v.union(v.string(), v.null()) },
-  handler: async (ctx, { domain, placedSince, cursor }) => {
+  args: {
+    domain: v.string(),
+    placedSince: v.number(),
+    orderNames: v.optional(v.array(v.string())),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, { domain, placedSince, orderNames, cursor }) => {
     if (
       !enabledTrackingDomains(env.STOREFRONT_TRACKING_AUTO_REGISTER).some(
         (enabled) => enabled === domain,
@@ -177,6 +182,7 @@ export const queueStorefrontBackfill = internalMutation({
         q.eq("connectionId", connection._id).eq("active", true).eq("autoTrackAt", undefined),
       )
       .paginate({ numItems: 40, cursor });
+    const selected = orderNames && new Set(orderNames);
     const now = Date.now();
     let queued = 0;
     for (const shipment of page.page) {
@@ -191,7 +197,8 @@ export const queueStorefrontBackfill = internalMutation({
         order.connectionId !== connection._id ||
         order.generation !== connection.generation ||
         order.cancelled ||
-        order.placedAt < placedSince
+        order.placedAt < placedSince ||
+        (selected && !selected.has(order.name))
       )
         continue;
       await ctx.db.patch("orderShipments", shipment._id, { autoTrackAt: now });

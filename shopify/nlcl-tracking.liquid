@@ -1,0 +1,51 @@
+{%- liquid
+  case shop.permanent_domain
+    when 'r6nfea-iv.myshopify.com'
+      assign tracking_path = 'paso-noble'
+    when 'dp2iki-0b.myshopify.com'
+      assign tracking_path = 'pluschwelt'
+    when 'ymv1px-wc.myshopify.com'
+      assign tracking_path = 'mundo-lamparas'
+    when '86npih-sd.myshopify.com'
+      assign tracking_path = 'guertelhaus'
+    when 'c0hrhz-tv.myshopify.com'
+      assign tracking_path = 'peluche-club'
+    when 'myhhqu-yz.myshopify.com'
+      assign tracking_path = 'montessori-co'
+    when 'sdfrqt-ew.myshopify.com'
+      assign tracking_path = 'bolsaria'
+  endcase
+  assign language = request.locale.iso_code | split: '-' | first
+  assign frame_title = 'Seguimiento de pedidos'
+  if language == 'de'
+    assign frame_title = 'Sendungsverfolgung'
+  endif
+-%}
+{%- if tracking_path != blank -%}
+{%- assign scheme = section.settings.color_scheme | default: settings.color_schemes['scheme-1'] -%}
+{%- assign button_color = scheme.settings.primary_button_background
+  | default: scheme.settings.button
+  | default: scheme.settings.solid_button_background
+  | default: settings.color_button
+  | default: settings.primary_button_background
+  | default: settings.colors_solid_button_background
+  | default: settings.colors_accent_1
+-%}
+<iframe
+  title="{{ frame_title | escape }}"
+  src="https://precise-squid-896.convex.site/storefront/tracking/{{ tracking_path }}?lang={{ request.locale.iso_code | url_encode }}{% if button_color != blank %}&amp;accent={{ button_color | color_to_hex | url_encode }}{% endif %}"
+  referrerpolicy="no-referrer"
+  style="display:block;width:100%;min-height:1100px;border:0"
+></iframe>
+<script>
+  (() => {
+    const frame = document.currentScript?.previousElementSibling;
+    if (!(frame instanceof HTMLIFrameElement) || window.Shopify?.designMode) return;
+    const number = new URLSearchParams(window.location.search).get("nums")?.trim();
+    if (!number || !/^[a-z0-9 _-]{3,128}$/i.test(number)) return;
+    const url = new URL(frame.src);
+    url.searchParams.set("nums", number);
+    frame.src = url.href;
+  })();
+</script>
+{%- endif -%}

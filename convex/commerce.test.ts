@@ -536,6 +536,43 @@ test("Mundo Joyero keeps searches in Spanish and isolated from the French storef
   expect(geocode).toHaveBeenCalledTimes(2);
 });
 
+test("NLCL pages use their store language and keep German map lookups local", async () => {
+  const t = backend();
+  const spanishPath = "/storefront/tracking/paso-noble";
+  const germanPath = "/storefront/tracking/pluschwelt";
+  const germanDomain = "dp2iki-0b.myshopify.com";
+  vi.stubEnv(
+    "STOREFRONT_TRACKING_PILOT",
+    `r6nfea-iv.myshopify.com,${germanDomain},yniis5-yb.myshopify.com`,
+  );
+  expect(await (await t.fetch(spanishPath)).text()).toContain('<html lang="es">');
+  const german = await t.fetch(germanPath);
+  expect(german.headers.get("content-security-policy")).toContain("https://pluschwelt.com");
+  expect(german.headers.get("content-security-policy")).not.toContain("https://paso-noble.es");
+  expect(await german.text()).toContain('<html lang="de">');
+  expect((await t.fetch("/storefront/tracking/luscencia")).status).toBe(404);
+
+  const w = await workspace(t, "plueschwelt-tracking");
+  const { row } = await connect(t, w, germanDomain);
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [{ ...order(), destination: { city: "Berlin", country: "DE", zip: "10115" } }],
+  });
+  const externalLookup = vi.fn();
+  vi.stubGlobal("fetch", externalLookup);
+  const result = await t.fetch(`${germanPath}?nums=TRACK1234`);
+  expect(result.status).toBe(200);
+  const html = await result.text();
+  expect(html).toContain("Sendungsverfolgung");
+  expect(html).toContain("Liefergebiet");
+  expect(html).toContain("openstreetmap.org/export");
+  expect(html).toContain("www.geonames.org");
+  expect(html).not.toContain("10115");
+  expect(externalLookup).not.toHaveBeenCalled();
+  expect((await t.fetch(`${spanishPath}?nums=TRACK1234`)).status).toBe(404);
+});
+
 test("an imported shipment starts tracking before any support message", async () => {
   vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", "8vvazz-uj.myshopify.com");
   vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
@@ -615,9 +652,18 @@ test("storefront backfill queues an existing eligible parcel only once", async (
       placedSince: imported.placedAt + 1,
     }),
   ).toMatchObject({ queued: 0 });
-  expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toMatchObject({
-    queued: 1,
-  });
+  expect(
+    await t.mutation(internal.orderTracking.queueStorefrontBackfill, {
+      ...args,
+      orderNames: ["#other"],
+    }),
+  ).toMatchObject({ queued: 0 });
+  expect(
+    await t.mutation(internal.orderTracking.queueStorefrontBackfill, {
+      ...args,
+      orderNames: [imported.name],
+    }),
+  ).toMatchObject({ queued: 1 });
   expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toEqual({
     queued: 0,
     cursor: null,
