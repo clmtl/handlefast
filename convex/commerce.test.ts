@@ -652,9 +652,18 @@ test("storefront backfill queues an existing eligible parcel only once", async (
       placedSince: imported.placedAt + 1,
     }),
   ).toMatchObject({ queued: 0 });
-  expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toMatchObject({
-    queued: 1,
-  });
+  expect(
+    await t.mutation(internal.orderTracking.queueStorefrontBackfill, {
+      ...args,
+      orderNames: ["#other"],
+    }),
+  ).toMatchObject({ queued: 0 });
+  expect(
+    await t.mutation(internal.orderTracking.queueStorefrontBackfill, {
+      ...args,
+      orderNames: [imported.name],
+    }),
+  ).toMatchObject({ queued: 1 });
   expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toEqual({
     queued: 0,
     cursor: null,
