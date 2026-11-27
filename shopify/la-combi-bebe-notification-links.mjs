@@ -22,9 +22,9 @@ export function prepareNotification(name, source) {
   if (name === "order_confirmation") {
     return replaceOnce(
       source,
-      /<a href="\{\{\s*order_status_url\s*\}\}"[^>]*>[\s\S]*?<\/a>/,
-      (anchor) => `${anchor}
-          <p style="margin:12px 0 0;text-align:center"><a href="${trackingPage}" style="color:#3D6954;text-decoration:underline">Suivre ma livraison</a></p>`,
+      /<a href="\{\{\s*order_status_url\s*\}\}"[^>]*>[\s\S]*?<\/a>\s*<\/td>\s*<\/tr>\s*<\/tbody>\s*<\/table>/,
+      (invoiceButton) => `${invoiceButton}
+<p style="margin:12px 0 0;text-align:center;font:15px/1.3 Helvetica,Arial,sans-serif"><a href="${trackingPage}" style="color:#3D6954;text-decoration:underline">Suivre ma livraison</a></p>`,
     );
   }
 
