@@ -13,3 +13,14 @@
   referrerpolicy="no-referrer"
   style="display:block;width:100%;min-height:1100px;border:0"
 ></iframe>
+<script>
+  (() => {
+    const frame = document.currentScript?.previousElementSibling;
+    if (!(frame instanceof HTMLIFrameElement) || window.Shopify?.designMode) return;
+    const number = new URLSearchParams(window.location.search).get("nums")?.trim();
+    if (!number || !/^[a-z0-9 _-]{3,128}$/i.test(number)) return;
+    const url = new URL(frame.src);
+    url.searchParams.set("nums", number);
+    frame.src = url.href;
+  })();
+</script>

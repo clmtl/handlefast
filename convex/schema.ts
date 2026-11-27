@@ -114,6 +114,11 @@ export default defineSchema({
   })
     .index("by_receiptId", ["receiptId"])
     .index("by_orderId", ["orderId"]),
+  storefrontDeliveryPoints: defineTable({
+    key: v.string(),
+    longitude: v.number(),
+    latitude: v.number(),
+  }).index("by_key", ["key"]),
   storefrontTrackingLimits: defineTable({
     shopId: v.id("shops"),
     startedAt: v.number(),

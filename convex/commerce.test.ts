@@ -352,7 +352,7 @@ test("storefront tracking verifies checkout email, scopes parcels, and renders l
   const other = await workspace(t, "other-tracking-shop");
   const { row } = await connect(t, pilot, "8vvazz-uj.myshopify.com");
   const { row: otherRow } = await connect(t, other, "other.myshopify.com", "b".repeat(32));
-  const pilotOrder = order();
+  const pilotOrder = { ...order(), destination: { city: "Paris", country: "FR", zip: "75012" } };
   const otherOrder = {
     ...order(),
     name: "#4321",
@@ -393,6 +393,12 @@ test("storefront tracking verifies checkout email, scopes parcels, and renders l
     (await search({ mode: "order", number: "#1234", email: "wrong@example.com" })).status,
   ).toBe(404);
 
+  const geocode = vi.fn(async (_url: URL) =>
+    Response.json([
+      { nom: "Paris", codesPostaux: ["75012"], centre: { coordinates: [2.352, 48.857] } },
+    ]),
+  );
+  vi.stubGlobal("fetch", geocode);
   const tracked = await search({ mode: "tracking", number: "track1234" });
   expect(tracked.status).toBe(200);
   expect(tracked.headers.get("cache-control")).toBe("no-store");
@@ -401,7 +407,19 @@ test("storefront tracking verifies checkout email, scopes parcels, and renders l
   expect(publicHtml).toContain("Dernière mise à jour");
   expect(publicHtml).toContain("Chez le livreur");
   expect(publicHtml).toContain('<p class="method-separator">ou</p>');
-  expect(publicHtml).not.toContain("openstreetmap.org/export");
+  expect(publicHtml).toContain("openstreetmap.org/export");
+  expect(publicHtml).toContain("Paris");
+  expect(publicHtml).not.toContain("75012");
+  expect(publicHtml).not.toContain(pilotOrder.email);
+  const [geocoder] = geocode.mock.calls[0];
+  expect(geocoder.hostname).toBe("geo.api.gouv.fr");
+  expect(geocoder.searchParams.get("nom")).toBe("Paris");
+  expect(geocoder.search).not.toContain("75012");
+
+  const direct = await t.fetch(`${path}?lang=fr&nums=TRACK1234`);
+  expect(direct.status).toBe(200);
+  expect(await direct.text()).toContain("openstreetmap.org/export");
+  expect((await t.fetch(`${path}?nums=%3Cscript%3E`)).status).toBe(400);
   expect(publicHtml).toContain('aria-current="step"');
   expect(publicHtml).toContain("<time datetime=");
   expect(publicHtml).not.toContain("TRACK5678");
@@ -486,6 +504,44 @@ test("an imported shipment starts tracking before any support message", async ()
   expect(stored?.autoTrackAt).toBeUndefined();
   await t.action(internal.orderTracking.refreshStorefront, {});
   expect(calls).toHaveBeenCalledTimes(2);
+});
+
+test("storefront backfill queues an existing eligible parcel only once", async () => {
+  vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
+  const domain = "8vvazz-uj.myshopify.com";
+  const t = backend();
+  const shop = await workspace(t, "storefront-backfill");
+  const { row } = await connect(t, shop, domain);
+  const imported = order();
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [imported],
+  });
+  const shipments = await t.run((ctx) => ctx.db.query("orderShipments").collect());
+  expect(shipments).toHaveLength(2);
+  await t.run((ctx) => ctx.db.patch("orderShipments", shipments[1]._id, { status: "Delivered" }));
+  const args = { domain, placedSince: imported.placedAt, cursor: null };
+  await expect(t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).rejects.toThrow(
+    "StorefrontTrackingDisabled",
+  );
+  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", domain);
+  expect(
+    await t.mutation(internal.orderTracking.queueStorefrontBackfill, {
+      ...args,
+      placedSince: imported.placedAt + 1,
+    }),
+  ).toMatchObject({ queued: 0 });
+  expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toMatchObject({
+    queued: 1,
+  });
+  expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toEqual({
+    queued: 0,
+    cursor: null,
+  });
+  expect(await t.run((ctx) => ctx.db.get("orderShipments", shipments[0]._id))).toMatchObject({
+    autoTrackAt: Date.now(),
+  });
 });
 
 describe("shipment updates", () => {

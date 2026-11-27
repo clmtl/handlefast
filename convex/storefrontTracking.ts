@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { normalizedEmail } from "./lib/commerceModel";
 
 export const storefrontPilotDomain = "8vvazz-uj.myshopify.com";
@@ -73,7 +73,11 @@ export const lookup = internalMutation({
       const order = await ctx.db.get("shopifyOrders", shipment.orderId);
       if (!order || !belongsToShop(order) || !retained(order) || order.cancelled)
         return { kind: "missing" } as const;
-      return { kind: "parcels", parcels: [parcelView(shipment)] } as const;
+      return {
+        kind: "parcels",
+        parcels: [parcelView(shipment)],
+        destination: order.destination,
+      } as const;
     }
 
     const reference = search.number.replace(/^#/, "");
@@ -134,3 +138,25 @@ function parcelView(shipment: Doc<"orderShipments">, placedAt?: number) {
     lastEventAt,
   };
 }
+
+export const deliveryPoint = internalQuery({
+  args: { key: v.string() },
+  handler: async (ctx, { key }) => {
+    const point = await ctx.db
+      .query("storefrontDeliveryPoints")
+      .withIndex("by_key", (q) => q.eq("key", key))
+      .unique();
+    return point ? [point.longitude, point.latitude] : null;
+  },
+});
+
+export const saveDeliveryPoint = internalMutation({
+  args: { key: v.string(), longitude: v.number(), latitude: v.number() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("storefrontDeliveryPoints")
+      .withIndex("by_key", (q) => q.eq("key", args.key))
+      .unique();
+    if (!existing) await ctx.db.insert("storefrontDeliveryPoints", args);
+  },
+});

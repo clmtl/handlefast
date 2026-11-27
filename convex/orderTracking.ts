@@ -152,6 +152,49 @@ export const apply = internalMutation({
   },
 });
 
+export const queueStorefrontBackfill = internalMutation({
+  args: { domain: v.string(), placedSince: v.number(), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { domain, placedSince, cursor }) => {
+    if (domain !== env.STOREFRONT_TRACKING_AUTO_REGISTER || !env.TRACK17_API_KEY)
+      throw new ConvexError("StorefrontTrackingDisabled");
+    const connection = await ctx.db
+      .query("shopifyConnections")
+      .withIndex("by_domain", (q) => q.eq("domain", domain))
+      .unique();
+    const shop = connection && (await ctx.db.get("shops", connection.shopId));
+    if (connection?.status !== "active" || !shop || shop.status === "disabled")
+      throw new ConvexError("TrackingUnavailable");
+
+    const page = await ctx.db
+      .query("orderShipments")
+      .withIndex("by_connectionId_and_active_and_autoTrackAt", (q) =>
+        q.eq("connectionId", connection._id).eq("active", true).eq("autoTrackAt", undefined),
+      )
+      .paginate({ numItems: 40, cursor });
+    const now = Date.now();
+    let queued = 0;
+    for (const shipment of page.page) {
+      if (
+        shipment.generation !== connection.generation ||
+        ["Delivered", "Returned"].includes(shipment.status)
+      )
+        continue;
+      const order = await ctx.db.get("shopifyOrders", shipment.orderId);
+      if (
+        !order ||
+        order.connectionId !== connection._id ||
+        order.generation !== connection.generation ||
+        order.cancelled ||
+        order.placedAt < placedSince
+      )
+        continue;
+      await ctx.db.patch("orderShipments", shipment._id, { autoTrackAt: now });
+      queued++;
+    }
+    return { queued, cursor: page.isDone ? null : page.continueCursor };
+  },
+});
+
 export const claimStorefront = internalMutation({
   args: { domain: v.string() },
   handler: async (ctx, { domain }) => {
