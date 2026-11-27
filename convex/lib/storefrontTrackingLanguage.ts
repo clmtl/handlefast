@@ -91,7 +91,7 @@ const messages = {
     separator: "o",
     localCourier: "Con el repartidor local",
     deliveryArea: "Zona de entrega",
-    title: "Seguir mi envío",
+    title: "Seguimiento de pedidos",
     intro: "Usa los datos de tu pedido o el número de seguimiento de tu paquete.",
     byOrder: "Por número de pedido",
     orderNumber: "Número de pedido",
