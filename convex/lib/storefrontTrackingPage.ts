@@ -1,5 +1,6 @@
 import type { DeliveryMap } from "./storefrontDeliveryMap";
 import type { StorefrontLanguage } from "./storefrontTrackingLanguage";
+import type { StorefrontTrackingShop } from "./storefrontTrackingShops";
 
 const statusLabels = new Map<string, keyof StorefrontLanguage["text"]>([
   ["Unavailable", "unavailable"],
@@ -126,6 +127,7 @@ export function trackingResult(
 }
 
 export function trackingPage(
+  shop: StorefrontTrackingShop,
   { locale, text }: StorefrontLanguage,
   content = "",
   status = 200,
@@ -141,7 +143,7 @@ export function trackingPage(
   const foreground = luminance > 0.179 ? "#000" : "#fff";
   const params = new URLSearchParams({ lang: locale });
   if (hasAccent) params.set("accent", accent);
-  const action = escapeHtml(`/storefront/tracking-pilot?${params.toString()}`);
+  const action = escapeHtml(`${shop.path}?${params.toString()}`);
   const orderForm = `<form method="post" action="${action}" aria-labelledby="order-title">
     <h2 id="order-title">${text.byOrder}</h2>
     <input type="hidden" name="mode" value="order">
@@ -231,8 +233,7 @@ export function trackingPage(
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
-        "Content-Security-Policy":
-          "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-src https://www.openstreetmap.org; base-uri 'none'; frame-ancestors https://la-combi-bebe.fr https://8vvazz-uj.myshopify.com https://admin.shopify.com https://online-store-web.shopifyapps.com",
+        "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-src https://www.openstreetmap.org; base-uri 'none'; frame-ancestors ${shop.origins.join(" ")} https://${shop.domain} https://admin.shopify.com https://online-store-web.shopifyapps.com`,
         "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff",
         "X-Robots-Tag": "noindex, nofollow",

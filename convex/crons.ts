@@ -6,6 +6,7 @@ crons.interval(
   "subscribe and refresh new storefront parcels",
   { minutes: 1 },
   internal.orderTracking.refreshStorefront,
+  {},
 );
 crons.interval(
   "expire Shopify browser authorizations",

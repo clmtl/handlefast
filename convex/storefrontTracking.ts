@@ -3,21 +3,21 @@ import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { normalizedEmail } from "./lib/commerceModel";
 
-export const storefrontPilotDomain = "8vvazz-uj.myshopify.com";
 const requestLimit = 60;
 const windowMs = 60_000;
 
 export const lookup = internalMutation({
   args: {
+    domain: v.string(),
     search: v.union(
       v.object({ mode: v.literal("tracking"), number: v.string() }),
       v.object({ mode: v.literal("order"), number: v.string(), email: v.string() }),
     ),
   },
-  handler: async (ctx, { search }) => {
+  handler: async (ctx, { domain, search }) => {
     const connection = await ctx.db
       .query("shopifyConnections")
-      .withIndex("by_domain", (q) => q.eq("domain", storefrontPilotDomain))
+      .withIndex("by_domain", (q) => q.eq("domain", domain))
       .unique();
     if (connection?.status !== "active") return { kind: "missing" } as const;
     const shop = await ctx.db.get("shops", connection.shopId);
