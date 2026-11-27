@@ -254,7 +254,10 @@ export const list = query({
         sentAt: row.sentAt ?? null,
         text:
           (row.status !== "cancelled" || row.attempts > 0 ? row.payload?.text : undefined) ??
-          (language ? delayEmail(language, row.orderName, shop?.name ?? "").text : ""),
+          (language
+            ? delayEmail(language, row.orderName, shop?.supportSignatureName ?? shop?.name ?? "")
+                .text
+            : ""),
         canApprove:
           canSend &&
           env.REQUIRE_EMAIL_APPROVAL === "true" &&
@@ -422,7 +425,7 @@ async function queueNotice(
   const email = order.email;
   if (!email) throw new ConvexError("NotificationUnavailable");
   const replyToken = row.replyToken ?? crypto.randomUUID(),
-    mail = delayEmail(language, order.name, shop.name);
+    mail = delayEmail(language, order.name, shop.supportSignatureName ?? shop.name);
   const conversationId =
     row.conversationId && (await ctx.db.get(row.conversationId))
       ? row.conversationId
@@ -499,7 +502,8 @@ export const approve = mutation({
       !from ||
       !info.language ||
       info.order.email !== to ||
-      delayEmail(info.language, info.order.name, info.shop.name).text !== text
+      delayEmail(info.language, info.order.name, info.shop.supportSignatureName ?? info.shop.name)
+        .text !== text
     )
       throw new ConvexError("NotificationChanged");
     await queueNotice(

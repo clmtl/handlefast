@@ -4,7 +4,11 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx, mutation, query } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
-import { activeAutoReply } from "./lib/automaticReplyPolicy";
+import {
+  activeAutoReply,
+  orderIdentityDraft,
+  renderAutomaticReply,
+} from "./lib/automaticReplyPolicy";
 import { categoryValidator, priorityValidator } from "./lib/emailClassificationPolicy";
 import { humanReviewContext } from "./lib/humanReviewContext";
 import {
@@ -17,6 +21,7 @@ import {
   warningValidator,
 } from "./lib/humanReviewPolicy";
 import { manualReplyTarget } from "./lib/manualReply";
+import { supportedEmailLanguage } from "./lib/shopLanguage";
 
 export async function ensureHumanReview(
   ctx: MutationCtx,
@@ -135,13 +140,15 @@ export const get = query({
       stale: v.boolean(),
       sendTarget: v.union(v.null(), v.object({ to: v.string(), from: v.string() })),
       draftLanguageMatches: v.boolean(),
+      suggestedDraft: v.union(v.string(), v.null()),
+      signatureName: v.union(v.string(), v.null()),
       reason: blockReason,
     }),
   ),
   handler: async (ctx, { receiptId }) => {
     const receipt = await ctx.db.get(receiptId);
     if (!receipt || receipt.expiresAt <= Date.now()) return null;
-    const { membership } = await requireShopMembership(ctx, receipt.shopId);
+    const { membership, shop } = await requireShopMembership(ctx, receipt.shopId);
     if (receipt.triage?.bucket !== "sav" || receipt.status !== "processed") return null;
     const automatic = await ctx.db
       .query("automaticReplies")
@@ -153,7 +160,25 @@ export const get = query({
       membership.role === "owner" && (!automatic || automatic.attempts === 0)
         ? await manualReplyTarget(ctx, receipt)
         : null;
+    const language = supportedEmailLanguage(context.replyLocale);
+    const signature = shop.supportSignatureName ?? shop.name;
+    const suggestedDraft =
+      language &&
+      context.identityMismatch &&
+      ["order_status", "delivery_issue"].includes(receipt.classification?.category ?? "")
+        ? orderIdentityDraft(language, signature)
+        : context.missingReference && language
+          ? renderAutomaticReply({ intent: "reference", confidence: 1 }, language, "order_status", {
+              statuses: [],
+              preparing: false,
+              missingOrder: true,
+              hasReference: false,
+              shopName: signature,
+            })
+          : null;
     return {
+      suggestedDraft,
+      signatureName: shop.supportSignatureName ?? null,
       sendTarget: target ? { to: target.to, from: target.from } : null,
       review: receipt.humanReview ?? null,
       canManage: membership.role !== "viewer",

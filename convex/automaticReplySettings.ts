@@ -12,6 +12,7 @@ export const get = query({
     canManage: v.boolean(),
     configured: v.boolean(),
     approvalRequired: v.boolean(),
+    signatureName: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, { shopId }) => {
     const { membership, shop } = await requireShopMembership(ctx, shopId);
@@ -22,6 +23,7 @@ export const get = query({
     const policy = effectiveReplyPolicy(settings);
     return {
       enabled: policy.enabled,
+      signatureName: shop.supportSignatureName ?? null,
       rules: policy.rules,
       canManage: ["owner", "admin"].includes(membership.role),
       approvalRequired: env.REQUIRE_EMAIL_APPROVAL === "true",
@@ -68,6 +70,22 @@ export const save = mutation({
       autoReplyRevision: (settings.autoReplyRevision ?? 0) + 1,
       autoReplyActivatedAt: enabled ? Date.now() : undefined,
       autoReplyUpdatedBy: profile._id,
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const saveSignature = mutation({
+  args: { shopId: v.id("shops"), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { shopId, name }) => {
+    const { shop, membership } = await requireShopMembership(ctx, shopId);
+    assertCanManageOrganization(membership);
+    if (shop.status === "disabled" || name.length > 100 || /[\p{C}\p{Zl}\p{Zp}]/u.test(name))
+      throw new ConvexError("InvalidSignatureName");
+    await ctx.db.patch(shopId, {
+      supportSignatureName: name.trim() || undefined,
       updatedAt: Date.now(),
     });
     return null;

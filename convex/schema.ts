@@ -100,6 +100,8 @@ export default defineSchema({
     .index("by_shopId_and_gid", ["shopId", "gid"])
     .index("by_shopId_and_email", ["shopId", "email"])
     .index("by_shopId_and_generation_and_email", ["shopId", "generation", "email"])
+    .index("by_shopId_and_generation_and_name", ["shopId", "generation", "name"])
+    .index("by_shopId_and_generation_and_recipient", ["shopId", "generation", "recipientName"])
     .index("by_connectionId", ["connectionId"])
     .index("by_shopId_and_placedAt", ["shopId", "placedAt"])
     .index("by_placedAt", ["placedAt"]),
@@ -227,6 +229,7 @@ export default defineSchema({
     platform: v.union(v.literal("manual"), v.literal("shopify")),
     status: v.union(v.literal("setup"), v.literal("active"), v.literal("disabled")),
     supportEmail: v.optional(v.string()),
+    supportSignatureName: v.optional(v.string()),
     shopifyImportDomain: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),

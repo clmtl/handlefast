@@ -35,7 +35,11 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
   const settings = useQuery(api.automaticReplySettings.get, { shopId });
   const shopify = useQuery(api.shopifyConnection.status, { shopId });
   const save = useMutation(api.automaticReplySettings.save);
+  const saveSignature = useMutation(api.automaticReplySettings.saveSignature);
   const [editing, setEditing] = useState(false);
+  const [signature, setSignature] = useState<string | null>(null);
+  const [signatureStatus, setSignatureStatus] = useState("");
+  const [savingSignature, setSavingSignature] = useState(false);
   const [draft, setDraft] = useState<ReplyRule[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -61,6 +65,64 @@ export function AutomaticReplySettings({ shopId }: { shopId: Id<"shops"> }) {
   }
   return (
     <div className="space-y-5">
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold">Signature SAV</h2>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="grid max-w-lg gap-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (signature === null) return;
+              setSavingSignature(true);
+              setSignatureStatus("");
+              try {
+                await saveSignature({ shopId, name: signature });
+                setSignature(null);
+                setSignatureStatus("Signature enregistrée.");
+              } catch {
+                setSignatureStatus("Impossible d’enregistrer la signature.");
+              } finally {
+                setSavingSignature(false);
+              }
+            }}
+          >
+            <label className="grid gap-1.5 text-sm font-medium">
+              Nom de la personne du SAV
+              <input
+                className="h-9 rounded-md border bg-background px-3 text-sm font-normal focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                type="text"
+                maxLength={100}
+                value={signature ?? settings.signatureName ?? ""}
+                disabled={!canManage || savingSignature}
+                onChange={(event) => {
+                  setSignature(event.target.value);
+                  setSignatureStatus("");
+                }}
+              />
+            </label>
+            {canManage && (
+              <Button
+                className="w-fit"
+                type="submit"
+                disabled={
+                  savingSignature ||
+                  signature === null ||
+                  signature.trim() === (settings.signatureName ?? "")
+                }
+              >
+                Enregistrer la signature
+              </Button>
+            )}
+            {signatureStatus && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {signatureStatus}
+              </p>
+            )}
+          </form>
+        </CardContent>
+      </Card>
       <Card className="gap-4">
         <CardHeader className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">

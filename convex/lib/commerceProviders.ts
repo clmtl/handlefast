@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { normalizedEmail, SHOPIFY_API_VERSION } from "./commerceModel";
+import { normalizedEmail, normalizedRecipientName, SHOPIFY_API_VERSION } from "./commerceModel";
 import { normalizeShopLocale } from "./shopLanguage";
 
 export const ORDER_FIELDS = `
   id name email createdAt updatedAt cancelledAt displayFinancialStatus displayFulfillmentStatus
   currentTotalPriceSet { shopMoney { amount currencyCode } }
   totalRefundedSet { shopMoney { amount currencyCode } }
-  shippingAddress { city countryCodeV2 zip }
+  shippingAddress { name city countryCodeV2 zip }
   lineItems(first: 50) { nodes { id title quantity sku variantTitle } pageInfo { hasNextPage } }
   fulfillments(first: 10) { id status trackingInfo(first: 10) { number company } }
 `;
@@ -133,6 +133,7 @@ const orderSchema = z.object({
   totalRefundedSet: money,
   shippingAddress: z
     .object({
+      name: z.string().nullable().optional(),
       city: z.string().nullable(),
       countryCodeV2: z.string().nullable(),
       zip: z.string().nullable(),
@@ -182,6 +183,7 @@ export function normalizeOrder(raw: unknown) {
     gid: order.id,
     name: order.name,
     email: normalizedEmail(order.email),
+    recipientName: normalizedRecipientName(order.shippingAddress?.name),
     placedAt: Date.parse(order.createdAt),
     sourceUpdatedAt: Date.parse(order.updatedAt),
     financialStatus: order.displayFinancialStatus ?? "UNKNOWN",

@@ -2,6 +2,7 @@ import type { Doc } from "../_generated/dataModel";
 import { env, type MutationCtx, type QueryCtx } from "../_generated/server";
 import { cachedOrderContext } from "../orderContext";
 import { effectiveReplyPolicy, matchesRule } from "./automaticReplyPolicy";
+import { emailOrderReferences } from "./commerceModel";
 import { type ReviewWarning, replyBlockReason } from "./humanReviewPolicy";
 import { shopLocale, supportedEmailLanguage } from "./shopLanguage";
 
@@ -155,5 +156,12 @@ export async function humanReviewContext(
     empty: !body,
     tooLarge: new TextEncoder().encode(prompt).length > 32_000,
     orderSyncedAt: usable?.syncedAt ?? null,
+    identityMismatch: Boolean(cached?.selected && !cached.identityMatches),
+    missingReference: Boolean(
+      message &&
+        ["order_status", "delivery_issue"].includes(receipt.classification?.category ?? "") &&
+        !cached?.selected &&
+        emailOrderReferences(message).length === 0,
+    ),
   };
 }

@@ -179,6 +179,26 @@ async function fixture(
     token: receipt?.humanReview?.job?.token ?? "",
   };
 }
+test("a pending tracking request without a reference gets a signed, localized draft without sending", async () => {
+  const f = await fixture("sav", true, "Bonjour, où en est ma commande ?");
+  await f.shop.client.mutation(api.automaticReplySettings.saveSignature, {
+    shopId: f.shop.shopId,
+    name: " Camille Dupont ",
+  });
+  await f.t.run(async (ctx) => {
+    const message = await ctx.db
+      .query("supportMessages")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", f.receiptId))
+      .unique();
+    if (!message) throw new Error("Missing message");
+    await ctx.db.patch(message._id, { subject: "Suivi de commande" });
+  });
+  const review = await f.shop.client.query(api.humanReviews.get, { receiptId: f.receiptId });
+  expect(review?.suggestedDraft).toContain("communiquer son numéro");
+  expect(review?.suggestedDraft?.endsWith("Camille Dupont")).toBe(true);
+  expect(await f.t.run((ctx) => ctx.db.query("automaticReplies").first())).toBeNull();
+});
+
 async function seedOrder(f: Awaited<ReturnType<typeof fixture>>, email = "client@example.com") {
   const now = Date.now();
   return f.t.run(async (ctx) => {
@@ -444,7 +464,11 @@ test("cache-only context reuses the selected matching order, excludes private ad
 test("ambiguous or mismatched identities never expose another order to the model", async () => {
   const f = await fixture();
   const ids = await seedOrder(f, "different@example.com");
-  expect((await context(f)).warnings).toContain("missing_order");
+  expect((await context(f)).warnings).toContain("identity_mismatch");
+  expect(JSON.parse((await context(f)).prompt).cachedOrder).toBeNull();
+  const draft = await f.shop.client.query(api.humanReviews.get, { receiptId: f.receiptId });
+  expect(draft?.suggestedDraft).toContain("confirmer l’adresse email");
+  expect(draft?.suggestedDraft).not.toContain("different@example.com");
   await f.shop.client.mutation(api.orderContext.link, {
     receiptId: f.receiptId,
     orderId: ids.orderId,

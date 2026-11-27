@@ -69,9 +69,9 @@ export const request = mutation({
   },
 });
 export const start = internalMutation({
-  args: { connectionId: v.id("shopifyConnections") },
+  args: { connectionId: v.id("shopifyConnections"), rescanRecentOrders: v.optional(v.boolean()) },
   returns: v.null(),
-  handler: async (ctx, { connectionId }) => {
+  handler: async (ctx, { connectionId, rescanRecentOrders }) => {
     const row = await ctx.db.get(connectionId);
     const shop = row ? await ctx.db.get(row.shopId) : null;
     if (row?.status !== "active" || !shop || shop.status === "disabled") return null;
@@ -89,7 +89,10 @@ export const start = internalMutation({
       generation: row.generation,
       lease,
       cursor: null,
-      since: row.syncedAt ? row.syncedAt - 5 * 60_000 : startedAt - 60 * 86_400_000,
+      since:
+        row.syncedAt && !rescanRecentOrders
+          ? row.syncedAt - 5 * 60_000
+          : startedAt - 60 * 86_400_000,
       startedAt,
     });
     return null;
