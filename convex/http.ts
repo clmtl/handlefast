@@ -5,6 +5,7 @@ import { env, httpAction } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
 import { shopifyWebhook, trackingWebhook } from "./commerceHttp";
 import { normalizedEmail } from "./lib/commerceModel";
+import { storefrontLanguage } from "./lib/storefrontTrackingLanguage";
 import { trackingMessage, trackingPage, trackingResult } from "./lib/storefrontTrackingPage";
 import { verifyWebhookSignature } from "./lib/webhookSignatures";
 import { storefrontPilotDomain } from "./storefrontTracking";
@@ -22,9 +23,9 @@ const storefrontTrackingPath = "/storefront/tracking-pilot";
 http.route({
   path: storefrontTrackingPath,
   method: "GET",
-  handler: httpAction(async () =>
+  handler: httpAction(async (_ctx, req) =>
     env.STOREFRONT_TRACKING_PILOT === storefrontPilotDomain
-      ? trackingPage()
+      ? trackingPage(storefrontLanguage(new URL(req.url).searchParams.get("lang")))
       : new Response(null, { status: 404 }),
   ),
 });
@@ -40,13 +41,16 @@ http.route({
     const body = await readWebhookBody(req);
     if (body === null) return new Response(null, { status: 413 });
     const form = new URLSearchParams(body);
+    const language = storefrontLanguage(new URL(req.url).searchParams.get("lang"));
+    const { text } = language;
+    const message = (content: keyof typeof text, status = 200) =>
+      trackingPage(language, trackingMessage(text[content], status >= 400), status);
     const mode = form.get("mode");
     const number = form.get("number")?.trim() ?? "";
     const email = normalizedEmail(form.get("email"));
-    if (mode !== "tracking" && mode !== "order")
-      return trackingPage(trackingMessage("Choisissez un mode de recherche.", true), 400);
+    if (mode !== "tracking" && mode !== "order") return message("choose", 400);
     if (mode === "tracking" && !/^[a-z0-9 _-]{3,128}$/i.test(number))
-      return trackingPage(trackingMessage("Vérifiez le numéro de suivi.", true), 400);
+      return message("invalidTracking", 400);
     if (
       mode === "order" &&
       (!number.replace(/^#/, "") ||
@@ -56,10 +60,7 @@ http.route({
         email.length > 254 ||
         !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     )
-      return trackingPage(
-        trackingMessage("Vérifiez le numéro de commande et l’adresse e-mail.", true),
-        400,
-      );
+      return message("invalidOrder", 400);
 
     const search =
       mode === "order" && email
@@ -68,33 +69,15 @@ http.route({
     const result = await ctx.runMutation(internal.storefrontTracking.lookup, { search });
     switch (result.kind) {
       case "limited":
-        return trackingPage(
-          trackingMessage("Trop de recherches. Réessayez dans une minute.", true),
-          429,
-        );
+        return message("limited", 429);
       case "missing":
-        return trackingPage(
-          trackingMessage(
-            mode === "order"
-              ? "Aucune commande trouvée avec ce numéro et cette adresse e-mail."
-              : "Aucun colis trouvé avec ce numéro de suivi.",
-            true,
-          ),
-          404,
-        );
+        return message(mode === "order" ? "missingOrder" : "missingTracking", 404);
       case "pending":
-        return trackingPage(trackingMessage("Votre commande est en préparation."), 200);
       case "noTracking":
-        return trackingPage(
-          trackingMessage(
-            "Votre commande a été expédiée. Le numéro de suivi n’est pas encore disponible.",
-          ),
-          200,
-        );
       case "cancelled":
-        return trackingPage(trackingMessage("Votre commande a été annulée."), 200);
+        return message(result.kind);
       case "parcels":
-        return trackingPage(trackingResult(result.parcels), 200);
+        return trackingPage(language, trackingResult(language, result.parcels));
     }
   }),
 });

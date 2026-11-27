@@ -51,17 +51,29 @@ describe("commerce provider contracts", () => {
       track_info: {
         latest_status: { status: "InTransit" },
         latest_event: event,
+        milestone: [
+          { key_stage: "InfoReceived", time_utc: "2026-10-01T12:00:00Z" },
+          { key_stage: "Departure", time_utc: "2026-10-02T16:00:00Z" },
+          { key_stage: "Arrival", time_utc: null },
+        ],
         tracking: {
           providers: [
             {
               latest_sync_time: "2026-10-03T12:00:00Z",
-              events: [event, { time_iso: "2026-10-02T12:00:00", description: "Unknown time" }],
+              events: [
+                { ...event, stage: "PickedUp" },
+                { time_iso: "2026-10-02T12:00:00", description: "Unknown time" },
+              ],
             },
           ],
         },
       },
     });
     expect(update.events).toHaveLength(2);
+    expect(update.milestones).toEqual({
+      prepared: Date.parse("2026-10-01T12:00:00Z"),
+      transit: Date.parse("2026-10-02T12:00:00Z"),
+    });
     expect(update.events[1].time).toBeNull();
     expect(update.eventAt).toBe(Date.parse("2026-10-03T12:00:00Z"));
     expect(update).not.toHaveProperty("eta");

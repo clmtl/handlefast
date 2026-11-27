@@ -334,11 +334,11 @@ describe("support order context", () => {
     );
   });
 });
-test("storefront tracking verifies checkout email, scopes parcels, and limits public history", async () => {
+test("storefront tracking verifies checkout email, scopes parcels, and renders localized milestones", async () => {
   const t = backend();
   const path = "/storefront/tracking-pilot";
-  const search = (fields: Record<string, string>) =>
-    t.fetch(path, {
+  const search = (fields: Record<string, string>, language = "fr") =>
+    t.fetch(`${path}?lang=${language}`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams(fields).toString(),
@@ -378,6 +378,7 @@ test("storefront tracking verifies checkout email, scopes parcels, and limits pu
     if (!shipment) throw new Error("Missing pilot parcel");
     await ctx.db.patch("orderShipments", shipment._id, {
       status: "Delivered",
+      milestones: { delivered: Date.now() },
       events: [
         { time: Date.now(), description: "<script>Livraison</script>", location: "Private" },
       ],
@@ -397,7 +398,9 @@ test("storefront tracking verifies checkout email, scopes parcels, and limits pu
   expect(tracked.headers.get("cache-control")).toBe("no-store");
   const publicHtml = await tracked.text();
   expect(publicHtml).toContain("Livré");
-  expect(publicHtml).toContain("Dernière mise à jour du transporteur");
+  expect(publicHtml).toContain("Dernière mise à jour");
+  expect(publicHtml).toContain('aria-current="step"');
+  expect(publicHtml).toContain("<time datetime=");
   expect(publicHtml).not.toContain("TRACK5678");
   expect(publicHtml).not.toContain("&lt;script&gt;");
 
@@ -406,9 +409,17 @@ test("storefront tracking verifies checkout email, scopes parcels, and limits pu
   const orderHtml = await matched.text();
   expect(orderHtml).toContain("Vos colis");
   expect(orderHtml).toContain("TRACK5678");
-  expect(orderHtml).toContain("&lt;script&gt;Livraison&lt;/script&gt;");
+  expect(orderHtml).not.toContain("Livraison&lt;");
   expect(orderHtml).not.toContain("Private");
   expect(orderHtml).not.toContain(pilotOrder.email);
+
+  const spanish = await search({ mode: "tracking", number: "TRACK1234" }, "es-MX");
+  expect(spanish.status).toBe(200);
+  const spanishHtml = await spanish.text();
+  expect(spanishHtml).toContain('<html lang="es">');
+  expect(spanishHtml).toContain("Entregado");
+  expect(spanishHtml).toContain("lang=es");
+  expect(await (await t.fetch(`${path}?lang=xx`)).text()).toContain('<html lang="en">');
 
   await t.run(async (ctx) => {
     const limit = await ctx.db

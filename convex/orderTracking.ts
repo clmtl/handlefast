@@ -132,6 +132,9 @@ export const apply = internalMutation({
       await ctx.db.patch(row._id, {
         status: update.status,
         events: update.events,
+        milestones: update.milestones
+          ? { ...row.milestones, ...update.milestones }
+          : row.milestones,
         eventAt: update.eventAt,
         syncedAt: Date.now(),
         error: undefined,

@@ -73,7 +73,7 @@ export const lookup = internalMutation({
       const order = await ctx.db.get("shopifyOrders", shipment.orderId);
       if (!order || !belongsToShop(order) || !retained(order) || order.cancelled)
         return { kind: "missing" } as const;
-      return { kind: "parcels", parcels: [parcelView(shipment, false)] } as const;
+      return { kind: "parcels", parcels: [parcelView(shipment)] } as const;
     }
 
     const reference = search.number.replace(/^#/, "");
@@ -112,33 +112,24 @@ export const lookup = internalMutation({
     const parcels = shipments.filter((row) => row.active && belongsToShop(row));
     if (parcels.length === 0)
       return { kind: order.fulfillmentStatus === "FULFILLED" ? "noTracking" : "pending" } as const;
-    return { kind: "parcels", parcels: parcels.map((row) => parcelView(row, true)) } as const;
+    return {
+      kind: "parcels",
+      parcels: parcels.map((row) => parcelView(row, order.placedAt)),
+    } as const;
   },
 });
 
-function parcelView(shipment: Doc<"orderShipments">, includeDescriptions: boolean) {
-  const events = shipment.events
-    .flatMap(({ time, description }) =>
-      time !== null && Math.abs(time) <= 8.64e15 ? [{ time, description }] : [],
-    )
-    .sort((a, b) => b.time - a.time);
-  const first = events[events.length - 1];
-  const last = events[0];
+function parcelView(shipment: Doc<"orderShipments">, placedAt?: number) {
+  const lastEventAt = Math.max(
+    0,
+    ...shipment.events.map(({ time }) => time ?? 0),
+    ...Object.values(shipment.milestones ?? {}),
+  );
   return {
     number: shipment.number,
     status: shipment.status,
-    events: includeDescriptions
-      ? events
-          .filter((event) => event.description.trim())
-          .slice(0, 8)
-          .map(({ time, description }) => ({ time, description: description.slice(0, 240) }))
-      : [
-          ...(last
-            ? [{ time: last.time, description: "Dernière mise à jour du transporteur" }]
-            : []),
-          ...(first && first.time !== last.time
-            ? [{ time: first.time, description: "Premier événement enregistré" }]
-            : []),
-        ],
+    placedAt,
+    milestones: shipment.milestones,
+    lastEventAt,
   };
 }

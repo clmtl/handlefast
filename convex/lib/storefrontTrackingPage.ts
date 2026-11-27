@@ -1,24 +1,19 @@
-const statusLabels: ReadonlyMap<string, string> = new Map([
-  ["Unavailable", "Suivi indisponible"],
-  ["NotFound", "Pas encore d’information"],
-  ["InfoReceived", "Étiquette créée"],
-  ["InTransit", "En transit"],
-  ["Expired", "Suivi expiré"],
-  ["AvailableForPickup", "Disponible au retrait"],
-  ["OutForDelivery", "En livraison"],
-  ["DeliveryFailure", "Échec de livraison"],
-  ["Delivered", "Livré"],
-  ["Exception", "Incident transporteur"],
-  ["Returning", "Retour en cours"],
-  ["Returned", "Retourné"],
-]);
+import type { StorefrontLanguage } from "./storefrontTrackingLanguage";
 
-const dateFormat = new Intl.DateTimeFormat("fr-FR", {
-  dateStyle: "long",
-  timeStyle: "short",
-  timeZone: "Europe/Paris",
-});
-
+const statusLabels = new Map<string, keyof StorefrontLanguage["text"]>([
+  ["Unavailable", "unavailable"],
+  ["NotFound", "noInfo"],
+  ["InfoReceived", "prepared"],
+  ["InTransit", "transit"],
+  ["Expired", "expired"],
+  ["AvailableForPickup", "pickup"],
+  ["OutForDelivery", "out"],
+  ["DeliveryFailure", "failure"],
+  ["Delivered", "delivered"],
+  ["Exception", "issue"],
+  ["Returning", "returning"],
+  ["Returned", "returned"],
+] as const);
 function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
@@ -33,59 +28,104 @@ export function trackingMessage(message: string, error = false) {
 }
 
 export function trackingResult(
+  { locale, text }: StorefrontLanguage,
   parcels: readonly {
     number: string;
     status: string;
-    events: { description: string; time: number }[];
+    placedAt?: number;
+    lastEventAt: number;
+    milestones?: Partial<
+      Record<"prepared" | "transit" | "pickup" | "outForDelivery" | "delivered", number>
+    >;
   }[],
 ) {
+  const dateFormat = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    timeZone: "Europe/Paris",
+  });
+  const updateFormat = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Europe/Paris",
+  });
+  const timeTag = (time: number | undefined, format: Intl.DateTimeFormat) =>
+    time && Math.abs(time) <= 8.64e15
+      ? `<time datetime="${new Date(time).toISOString()}">${format.format(time)}</time>`
+      : "";
+
   return `<section class="results" aria-labelledby="result-title">
-    <h2 id="result-title">${parcels.length === 1 ? "Votre colis" : "Vos colis"}</h2>
+    <h2 id="result-title">${parcels.length === 1 ? text.oneParcel : text.parcels}</h2>
     ${parcels
-      .map(
-        ({ number, status, events }) => `<article class="parcel">
-      <h3>${statusLabels.get(status) ?? "Suivi en attente"}</h3>
-      <p class="number">${escapeHtml(number)}</p>
-      ${
-        events.length
-          ? `<details open><summary>Historique du suivi</summary><ol>${events
-              .map(
-                ({ time, description }) =>
-                  `<li><time datetime="${new Date(time).toISOString()}">${dateFormat.format(time)}</time><span>${escapeHtml(description)}</span></li>`,
-              )
-              .join("")}</ol></details>`
-          : "<p>Aucune étape de livraison n’est disponible pour le moment.</p>"
-      }
-    </article>`,
-      )
+      .map(({ status, number, placedAt, milestones, lastEventAt }) => {
+        const pickup =
+          status === "AvailableForPickup" ||
+          Boolean(milestones?.pickup && !milestones.outForDelivery);
+        const steps = [
+          { label: text.confirmed, time: placedAt },
+          { label: text.prepared, time: milestones?.prepared, statuses: ["InfoReceived"] },
+          { label: text.transit, time: milestones?.transit, statuses: ["InTransit", "Expired"] },
+          {
+            label: pickup ? text.pickup : text.out,
+            time: pickup ? milestones?.pickup : milestones?.outForDelivery,
+            statuses: ["AvailableForPickup", "OutForDelivery", "DeliveryFailure"],
+          },
+          { label: text.delivered, time: milestones?.delivered, statuses: ["Delivered"] },
+        ];
+        const progress = steps.reduce(
+          (last, step, index) => (step.time || step.statuses?.includes(status) ? index : last),
+          -1,
+        );
+        const lastUpdate = timeTag(lastEventAt, updateFormat);
+        return `<article class="parcel">
+        <div class="parcel-heading">
+          <div><h3>${text.trackingNumber}</h3><p class="number">${escapeHtml(number)}</p></div>
+          <span class="parcel-status">${text[statusLabels.get(status) ?? "waiting"]}</span>
+        </div>
+        <ol class="progress" aria-label="${text.progress}">${steps
+          .map(({ label, time }, index) => {
+            const current = index === Math.max(progress, 0);
+            const done = index < progress || (current && status === "Delivered");
+            return `<li class="${current ? "current" : done ? "done" : "upcoming"}"${current ? ' aria-current="step"' : ""}>
+            <span class="marker" aria-hidden="true">${done ? "✓" : ""}</span>
+            <span class="step-label">${label}</span>
+            ${current ? "" : `<span class="sr-only"> — ${done ? text.completed : text.upcoming}</span>`}
+            ${timeTag(time, dateFormat)}
+          </li>`;
+          })
+          .join("")}</ol>
+        ${lastUpdate ? `<p class="last-update">${text.updated} · ${lastUpdate}</p>` : ""}
+      </article>`;
+      })
       .join("")}
   </section>`;
 }
 
-export function trackingPage(content = "", status = 200) {
-  const orderForm = `<form method="post" action="/storefront/tracking-pilot" aria-labelledby="order-title">
-    <h2 id="order-title">Par numéro de commande</h2>
+export function trackingPage({ locale, text }: StorefrontLanguage, content = "", status = 200) {
+  const action = `/storefront/tracking-pilot?lang=${locale}`;
+  const orderForm = `<form method="post" action="${action}" aria-labelledby="order-title">
+    <h2 id="order-title">${text.byOrder}</h2>
     <input type="hidden" name="mode" value="order">
-    <label for="order-number">Numéro de commande</label>
+    <label for="order-number">${text.orderNumber}</label>
     <input id="order-number" name="number" placeholder="#1234" required maxlength="64" spellcheck="false">
-    <label for="order-email">E-mail utilisé pour la commande</label>
+    <label for="order-email">${text.email}</label>
     <input id="order-email" name="email" type="email" autocomplete="email" required maxlength="254">
-    <button type="submit">Suivre ma commande</button>
+    <button type="submit">${text.findOrder}</button>
   </form>`;
-  const trackingForm = `<form method="post" action="/storefront/tracking-pilot" aria-labelledby="tracking-title">
-    <h2 id="tracking-title">Par numéro de suivi</h2>
+  const trackingForm = `<form method="post" action="${action}" aria-labelledby="tracking-title">
+    <h2 id="tracking-title">${text.byTracking}</h2>
     <input type="hidden" name="mode" value="tracking">
-    <label for="tracking">Numéro de suivi</label>
+    <label for="tracking">${text.trackingNumber}</label>
     <input id="tracking" name="number" required maxlength="128" spellcheck="false" autocapitalize="characters">
-    <button type="submit">Suivre mon colis</button>
+    <button type="submit">${text.findTracking}</button>
   </form>`;
   return new Response(
     `<!doctype html>
-<html lang="fr">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Suivi de livraison</title>
+  <title>${text.title}</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; color: #202124; background: transparent; font: 16px/1.5 system-ui, sans-serif; }
@@ -104,23 +144,38 @@ export function trackingPage(content = "", status = 200) {
     button { justify-self: start; color: #fff; background: #24262a; border: 1px solid #24262a; cursor: pointer; font-weight: 600; }
     button:hover { background: #3c4047; }
     :focus-visible { outline: 2px solid #394c66; outline-offset: 3px; }
-    .results, .message { margin: 0 0 1rem; }
-    .parcel + .parcel { margin-top: .65rem; }
-    .number { margin: .2rem 0 .85rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .results, .message { margin: 0 0 1.25rem; }
+    .parcel + .parcel { margin-top: .75rem; }
+    .parcel-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: .5rem; }
+    .parcel-heading h3 { font-size: .82rem; color: #525760; }
+    .number { margin: .12rem 0 0; color: #202124; font-weight: 650; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .parcel-status { display: inline-block; padding: .28rem .7rem; border-radius: 99px; background: #e9f2ee; color: #234d3b; font-weight: 650; font-size: .875rem; }
     .message { padding: .75rem 1rem; background: #f6f7f8; border: 1px solid #d8dbe0; border-radius: .5rem; }
-    summary { cursor: pointer; }
-    ol { padding: 0 0 0 1.1rem; margin: .75rem 0 0; border-left: 2px solid #d8dbe0; list-style: none; }
-    li { position: relative; padding-bottom: .8rem; overflow-wrap: anywhere; }
-    li:last-child { padding-bottom: 0; }
-    li::before { content: ""; position: absolute; left: -1.43rem; top: .38rem; width: .55rem; height: .55rem; background: #565c65; border-radius: 50%; }
-    time { display: block; font-size: .875rem; }
-    @media (max-width: 600px) { .methods { grid-template-columns: minmax(0, 1fr); } }
+    .progress { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); list-style: none; padding: 0; margin: 1.4rem 0 0; }
+    .progress li { position: relative; display: grid; grid-template-rows: 1.55rem auto auto; justify-items: center; align-content: start; gap: .45rem; text-align: center; padding: 0 .2rem; }
+    .progress li + li::before { content: ""; position: absolute; top: .73rem; right: 50%; width: 100%; border-top: 2px solid #d8dbe0; }
+    .progress li.done::before, .progress li.current::before { border-color: #42836b; }
+    .marker { z-index: 1; display: grid; place-items: center; flex: none; width: 1.55rem; height: 1.55rem; border: 2px solid #c6ccc9; border-radius: 50%; background: white; color: white; font-size: .83rem; }
+    .done .marker, .current .marker { border-color: #286950; background: #286950; }
+    .current .marker { box-shadow: 0 0 0 4px #e2efe9; }
+    .step-label { font-size: .85rem; font-weight: 650; overflow-wrap: anywhere; line-height: 1.25; }
+    .upcoming .step-label { color: #60656b; font-weight: 550; }
+    time { font-size: .8rem; }
+    .last-update { margin: 1rem 0 0; font-size: .8rem; border-top: 1px solid #e6e7e8; padding-top: .65rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    @media (max-width: 600px) {
+      .methods { grid-template-columns: minmax(0, 1fr); }
+      .progress { grid-template-columns: 1fr; gap: .65rem; }
+      .progress li { display: flex; flex-wrap: wrap; align-items: center; min-height: 1.55rem; padding: 0; text-align: start; gap: .55rem; }
+      .progress li + li::before { width: 0; height: .7rem; border-top: 0; border-left: 2px solid #d8dbe0; left: .73rem; top: -.7rem; right: auto; }
+      .progress li.done::before, .progress li.current::before { border-color: #42836b; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>Suivre ma livraison</h1>
-    <p>Utilisez les informations de votre commande ou le numéro de suivi de votre colis.</p>
+    <h1>${text.title}</h1>
+    <p>${text.intro}</p>
     ${content}
     <div class="methods">${orderForm}${trackingForm}</div>
   </main>
