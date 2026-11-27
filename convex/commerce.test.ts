@@ -462,7 +462,6 @@ test("Mundo Joyero keeps searches in Spanish and isolated from the French storef
   vi.stubEnv("STOREFRONT_TRACKING_PILOT", frenchDomain);
   expect((await t.fetch(spanishPath)).status).toBe(404);
   vi.stubEnv("STOREFRONT_TRACKING_PILOT", `${frenchDomain}, ${spanishDomain}`);
-  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", `${frenchDomain}, ${spanishDomain}`);
   const frenchShop = await workspace(t, "french-storefront");
   const spanishShop = await workspace(t, "spanish-storefront");
   const { row: france } = await connect(t, frenchShop, frenchDomain);
@@ -488,7 +487,7 @@ test("Mundo Joyero keeps searches in Spanish and isolated from the French storef
         .withIndex("by_connectionId", (q) => q.eq("connectionId", connection._id))
         .first(),
     );
-    expect(shipment?.autoTrackAt).toBe(Date.now());
+    expect(shipment?.autoTrackAt).toBeUndefined();
   }
 
   const municipality = { id: "28079", type: "Municipio", muni: "Madrid", provinceCode: "28" };
@@ -573,12 +572,120 @@ test("NLCL pages use their store language and keep German map lookups local", as
   expect((await t.fetch(`${spanishPath}?nums=TRACK1234`)).status).toBe(404);
 });
 
-test("an imported shipment starts tracking before any support message", async () => {
-  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", "8vvazz-uj.myshopify.com");
+test("only a valid storefront lookup queues first registration for the matching parcels", async () => {
+  const domain = "8vvazz-uj.myshopify.com";
+  const path = "/storefront/tracking-pilot";
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", domain);
   vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
   const t = backend();
-  const shop = await workspace(t, "automatic-storefront");
-  const { row } = await connect(t, shop, "8vvazz-uj.myshopify.com");
+  const shop = await workspace(t, "on-demand-storefront");
+  const { row } = await connect(t, shop, domain);
+  const imported = order();
+  const legacy = {
+    ...order("gid://shopify/Order/5678"),
+    name: "#5678",
+    tracking: [{ number: "LEGACY123", company: "Carrier", fulfillmentId: "f3" }],
+  };
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [imported, legacy],
+  });
+  const ship = (number: string) =>
+    t.run((ctx) =>
+      ctx.db
+        .query("orderShipments")
+        .withIndex("by_number", (q) => q.eq("number", number))
+        .first(),
+    );
+  const legacyShipment = await ship("LEGACY123");
+  if (!legacyShipment) throw new Error("Missing legacy shipment");
+  await t.run((ctx) =>
+    ctx.db.patch("orderShipments", legacyShipment._id, { autoTrackAt: Date.now() }),
+  );
+  const request = (data: Record<string, string>) =>
+    t.fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(data).toString(),
+    });
+  const deliveredAt = new Date(Date.now()).toISOString();
+  const calls = vi.fn(async (url: string, init: RequestInit) =>
+    Response.json({
+      code: 0,
+      data: {
+        accepted: (JSON.parse(String(init.body)) as { number: string }[]).map(({ number }) => ({
+          number,
+          carrier: 3011,
+          ...(url.endsWith("/gettrackinfo")
+            ? {
+                track_info: {
+                  latest_status: { status: "Delivered" },
+                  latest_event: {
+                    time_utc: deliveredAt,
+                    stage: "Delivered",
+                    description: "Delivered",
+                  },
+                },
+              }
+            : {}),
+        })),
+        rejected: [],
+      },
+    }),
+  );
+  vi.stubGlobal("fetch", calls);
+  expect((await t.fetch(path)).status).toBe(200);
+  expect(
+    (await t.fetch(`${path}?nums=TRACK1234`, { headers: { "Sec-Purpose": "prefetch" } })).status,
+  ).toBe(200);
+  expect(
+    (await request({ mode: "order", number: imported.name, email: "wrong@example.com" })).status,
+  ).toBe(404);
+  expect((await request({ mode: "tracking", number: "UNKNOWN123" })).status).toBe(404);
+  await t.action(internal.orderTracking.refreshStorefront, {});
+  expect(calls).not.toHaveBeenCalled();
+  expect((await ship("TRACK1234"))?.autoTrackAt).toBeUndefined();
+  expect((await ship("LEGACY123"))?.autoTrackAt).toBeUndefined();
+
+  const direct = await t.fetch(`${path}?nums=track1234`);
+  expect(await direct.text()).toContain("En attente des premières informations du transporteur");
+  expect((await ship("TRACK1234"))?.storefrontTrackingRequestedAt).toBe(Date.now());
+  expect((await ship("TRACK5678"))?.autoTrackAt).toBeUndefined();
+  expect((await request({ mode: "tracking", number: "LEGACY123" })).status).toBe(200);
+  expect((await ship("LEGACY123"))?.storefrontTrackingRequestedAt).toBe(Date.now());
+  expect(
+    (await request({ mode: "order", number: imported.name, email: imported.email })).status,
+  ).toBe(200);
+  expect((await ship("TRACK5678"))?.storefrontTrackingRequestedAt).toBe(Date.now());
+  expect(calls).not.toHaveBeenCalled();
+
+  await t.action(internal.orderTracking.refreshStorefront, {});
+  const stored = await ship("TRACK1234");
+  expect(stored).toMatchObject({
+    status: "Delivered",
+    registered: true,
+    milestones: { delivered: Date.now() },
+  });
+  expect(stored?.autoTrackAt).toBeUndefined();
+  expect((await t.fetch(`${path}?nums=TRACK1234`)).status).toBe(200);
+  await t.action(internal.orderTracking.refreshStorefront, {});
+  expect(calls).toHaveBeenCalledTimes(2);
+  expect(calls.mock.calls[0]?.[0]).toMatch(/\/register$/);
+  expect(JSON.parse(String(calls.mock.calls[0]?.[1].body))).toEqual(
+    expect.arrayContaining(
+      ["TRACK1234", "TRACK5678", "LEGACY123"].map((number) => expect.objectContaining({ number })),
+    ),
+  );
+});
+
+test("the storefront worker refreshes an existing subscription without registering it again", async () => {
+  const domain = "8vvazz-uj.myshopify.com";
+  vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", domain);
+  const t = backend();
+  const shop = await workspace(t, "existing-storefront-subscription");
+  const { row } = await connect(t, shop, domain);
   const imported = order();
   imported.tracking = imported.tracking.slice(0, 1);
   await t.mutation(internal.orderContext.saveLookup, {
@@ -586,44 +693,40 @@ test("an imported shipment starts tracking before any support message", async ()
     generation: row.generation,
     orders: [imported],
   });
-  const deliveredAt = new Date(Date.now()).toISOString();
-  const calls = vi.fn(async (url: string) =>
+  const shipment = await t.run(async (ctx) => {
+    const existing = await ctx.db.query("orderShipments").first();
+    if (!existing) throw new Error("Missing shipment");
+    await ctx.db.patch(existing._id, {
+      carrier: 3011,
+      registered: true,
+      autoTrackAt: Date.now(),
+    });
+    return existing;
+  });
+  const fetchTracking = vi.fn(async (_url: string) =>
     Response.json({
       code: 0,
       data: {
         accepted: [
           {
-            number: "TRACK1234",
+            number: shipment.number,
             carrier: 3011,
-            ...(url.endsWith("/gettrackinfo")
-              ? {
-                  track_info: {
-                    latest_status: { status: "Delivered" },
-                    latest_event: {
-                      time_utc: deliveredAt,
-                      stage: "Delivered",
-                      description: "Delivered",
-                    },
-                  },
-                }
-              : {}),
+            track_info: { latest_status: { status: "InTransit" } },
           },
         ],
         rejected: [],
       },
     }),
   );
-  vi.stubGlobal("fetch", calls);
+  vi.stubGlobal("fetch", fetchTracking);
   await t.action(internal.orderTracking.refreshStorefront, {});
-  const stored = await t.run((ctx) => ctx.db.query("orderShipments").first());
-  expect(stored).toMatchObject({
-    status: "Delivered",
+  expect(fetchTracking.mock.calls.map(([url]) => url)).toEqual([
+    "https://api.17track.net/track/v2.4/gettrackinfo",
+  ]);
+  expect(await t.run((ctx) => ctx.db.get(shipment._id))).toMatchObject({
     registered: true,
-    milestones: { delivered: Date.now() },
+    status: "InTransit",
   });
-  expect(stored?.autoTrackAt).toBeUndefined();
-  await t.action(internal.orderTracking.refreshStorefront, {});
-  expect(calls).toHaveBeenCalledTimes(2);
 });
 
 test("storefront backfill queues an existing eligible parcel only once", async () => {
@@ -641,11 +744,19 @@ test("storefront backfill queues an existing eligible parcel only once", async (
   const shipments = await t.run((ctx) => ctx.db.query("orderShipments").collect());
   expect(shipments).toHaveLength(2);
   await t.run((ctx) => ctx.db.patch("orderShipments", shipments[1]._id, { status: "Delivered" }));
-  const args = { domain, placedSince: imported.placedAt, cursor: null };
+  const args = {
+    domain,
+    placedSince: imported.placedAt,
+    cursor: null,
+    orderNames: [imported.name],
+  };
   await expect(t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).rejects.toThrow(
     "StorefrontTrackingDisabled",
   );
-  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", domain);
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", domain);
+  await expect(
+    t.mutation(internal.orderTracking.queueStorefrontBackfill, { ...args, orderNames: [] }),
+  ).rejects.toThrow("StorefrontBackfillRequiresOrders");
   expect(
     await t.mutation(internal.orderTracking.queueStorefrontBackfill, {
       ...args,

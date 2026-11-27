@@ -67,6 +67,7 @@ import type * as lib_slugs from "../lib/slugs.js";
 import type * as lib_storefrontDeliveryMap from "../lib/storefrontDeliveryMap.js";
 import type * as lib_storefrontTrackingLanguage from "../lib/storefrontTrackingLanguage.js";
 import type * as lib_storefrontTrackingPage from "../lib/storefrontTrackingPage.js";
+import type * as lib_storefrontTrackingShops from "../lib/storefrontTrackingShops.js";
 import type * as lib_webhookSignatures from "../lib/webhookSignatures.js";
 import type * as onboarding from "../onboarding.js";
 import type * as orderContext from "../orderContext.js";
@@ -148,6 +149,7 @@ declare const fullApi: ApiFromModules<{
   "lib/storefrontDeliveryMap": typeof lib_storefrontDeliveryMap;
   "lib/storefrontTrackingLanguage": typeof lib_storefrontTrackingLanguage;
   "lib/storefrontTrackingPage": typeof lib_storefrontTrackingPage;
+  "lib/storefrontTrackingShops": typeof lib_storefrontTrackingShops;
   "lib/webhookSignatures": typeof lib_webhookSignatures;
   onboarding: typeof onboarding;
   orderContext: typeof orderContext;

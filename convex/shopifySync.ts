@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { env, internalAction, internalMutation, mutation } from "./_generated/server";
+import { internalAction, internalMutation, mutation } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
 import { orderData } from "./lib/commerceModel";
 import {
@@ -15,7 +15,6 @@ import {
 import { decrypt, encrypt } from "./lib/commerceSecrets";
 import { ensureDeliveryPromise } from "./lib/deliveryContext";
 import { configureSupportWebhooks } from "./lib/shopifyWebhooks";
-import { enabledTrackingDomains } from "./lib/storefrontTrackingShops";
 
 export async function accessToken(ctx: ActionCtx, row: Doc<"shopifyConnections">) {
   const context = `shopify:${row.shopId}`;
@@ -299,12 +298,6 @@ export async function persistOrder(
       generation: row.generation,
       orderId,
       registered: false,
-      autoTrackAt:
-        enabledTrackingDomains(env.STOREFRONT_TRACKING_AUTO_REGISTER).some(
-          (domain) => domain === row.domain,
-        ) && !order.cancelled
-          ? Date.now()
-          : undefined,
       nextAttemptAt: Date.now(),
       status: "Unavailable",
       events: [],
