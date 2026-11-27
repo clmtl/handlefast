@@ -334,6 +334,216 @@ describe("support order context", () => {
     );
   });
 });
+test("storefront tracking verifies checkout email, scopes parcels, and renders localized milestones", async () => {
+  const t = backend();
+  const path = "/storefront/tracking-pilot";
+  const search = (fields: Record<string, string>, language = "fr") =>
+    t.fetch(`${path}?lang=${language}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields).toString(),
+    });
+
+  expect((await t.fetch(path)).status).toBe(404);
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", "8vvazz-uj.myshopify.com");
+  expect(await (await t.fetch(path)).text()).not.toContain("Code d’accès");
+
+  const pilot = await workspace(t, "tracking-pilot");
+  const other = await workspace(t, "other-tracking-shop");
+  const { row } = await connect(t, pilot, "8vvazz-uj.myshopify.com");
+  const { row: otherRow } = await connect(t, other, "other.myshopify.com", "b".repeat(32));
+  const pilotOrder = { ...order(), destination: { city: "Paris", country: "FR", zip: "75012" } };
+  const otherOrder = {
+    ...order(),
+    name: "#4321",
+    tracking: [{ number: "OUTSIDE1234", company: "Carrier", fulfillmentId: "f1" }],
+  };
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [pilotOrder],
+  });
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: otherRow._id,
+    generation: otherRow.generation,
+    orders: [otherOrder],
+  });
+  await t.run(async (ctx) => {
+    const shipment = await ctx.db
+      .query("orderShipments")
+      .withIndex("by_connectionId_and_number", (q) =>
+        q.eq("connectionId", row._id).eq("number", "TRACK1234"),
+      )
+      .unique();
+    if (!shipment) throw new Error("Missing pilot parcel");
+    await ctx.db.patch("orderShipments", shipment._id, {
+      status: "Delivered",
+      milestones: { delivered: Date.now() },
+      events: [
+        { time: Date.now(), description: "<script>Livraison</script>", location: "Private" },
+      ],
+    });
+  });
+
+  expect((await search({ mode: "tracking", number: "OUTSIDE1234" })).status).toBe(404);
+  expect((await search({ mode: "order", number: "4321", email: otherOrder.email })).status).toBe(
+    404,
+  );
+  expect(
+    (await search({ mode: "order", number: "#1234", email: "wrong@example.com" })).status,
+  ).toBe(404);
+
+  const geocode = vi.fn(async (_url: URL) =>
+    Response.json([
+      { nom: "Paris", codesPostaux: ["75012"], centre: { coordinates: [2.352, 48.857] } },
+    ]),
+  );
+  vi.stubGlobal("fetch", geocode);
+  const tracked = await search({ mode: "tracking", number: "track1234" });
+  expect(tracked.status).toBe(200);
+  expect(tracked.headers.get("cache-control")).toBe("no-store");
+  const publicHtml = await tracked.text();
+  expect(publicHtml).toContain("Livré");
+  expect(publicHtml).toContain("Dernière mise à jour");
+  expect(publicHtml).toContain("Chez le livreur");
+  expect(publicHtml).toContain('<p class="method-separator">ou</p>');
+  expect(publicHtml).toContain("openstreetmap.org/export");
+  expect(publicHtml).toContain("Paris");
+  expect(publicHtml).not.toContain("75012");
+  expect(publicHtml).not.toContain(pilotOrder.email);
+  const [geocoder] = geocode.mock.calls[0];
+  expect(geocoder.hostname).toBe("geo.api.gouv.fr");
+  expect(geocoder.searchParams.get("nom")).toBe("Paris");
+  expect(geocoder.search).not.toContain("75012");
+
+  const direct = await t.fetch(`${path}?lang=fr&nums=TRACK1234`);
+  expect(direct.status).toBe(200);
+  expect(await direct.text()).toContain("openstreetmap.org/export");
+  expect((await t.fetch(`${path}?nums=%3Cscript%3E`)).status).toBe(400);
+  expect(publicHtml).toContain('aria-current="step"');
+  expect(publicHtml).toContain("<time datetime=");
+  expect(publicHtml).not.toContain("TRACK5678");
+  expect(publicHtml).not.toContain("&lt;script&gt;");
+
+  const matched = await search({ mode: "order", number: "1234", email: "CUSTOMER@EXAMPLE.COM" });
+  expect(matched.status).toBe(200);
+  const orderHtml = await matched.text();
+  expect(orderHtml).toContain("Vos colis");
+  expect(orderHtml).toContain("TRACK5678");
+  expect(orderHtml).not.toContain("Livraison&lt;");
+  expect(orderHtml).not.toContain("Private");
+  expect(orderHtml).not.toContain(pilotOrder.email);
+
+  const spanish = await search({ mode: "tracking", number: "TRACK1234" }, "es-MX");
+  expect(spanish.status).toBe(200);
+  const spanishHtml = await spanish.text();
+  expect(spanishHtml).toContain('<html lang="es">');
+  expect(spanishHtml).toContain("Entregado");
+  expect(spanishHtml).toContain("lang=es");
+  expect(await (await t.fetch(`${path}?lang=xx`)).text()).toContain('<html lang="en">');
+
+  await t.run(async (ctx) => {
+    const limit = await ctx.db
+      .query("storefrontTrackingLimits")
+      .withIndex("by_shopId", (q) => q.eq("shopId", pilot.shopId))
+      .unique();
+    if (!limit) throw new Error("Missing lookup limit");
+    await ctx.db.patch("storefrontTrackingLimits", limit._id, { count: 60 });
+  });
+  expect((await search({ mode: "tracking", number: "TRACK1234" })).status).toBe(429);
+});
+
+test("an imported shipment starts tracking before any support message", async () => {
+  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", "8vvazz-uj.myshopify.com");
+  vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
+  const t = backend();
+  const shop = await workspace(t, "automatic-storefront");
+  const { row } = await connect(t, shop, "8vvazz-uj.myshopify.com");
+  const imported = order();
+  imported.tracking = imported.tracking.slice(0, 1);
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [imported],
+  });
+  const deliveredAt = new Date(Date.now()).toISOString();
+  const calls = vi.fn(async (url: string) =>
+    Response.json({
+      code: 0,
+      data: {
+        accepted: [
+          {
+            number: "TRACK1234",
+            carrier: 3011,
+            ...(url.endsWith("/gettrackinfo")
+              ? {
+                  track_info: {
+                    latest_status: { status: "Delivered" },
+                    latest_event: {
+                      time_utc: deliveredAt,
+                      stage: "Delivered",
+                      description: "Delivered",
+                    },
+                  },
+                }
+              : {}),
+          },
+        ],
+        rejected: [],
+      },
+    }),
+  );
+  vi.stubGlobal("fetch", calls);
+  await t.action(internal.orderTracking.refreshStorefront, {});
+  const stored = await t.run((ctx) => ctx.db.query("orderShipments").first());
+  expect(stored).toMatchObject({
+    status: "Delivered",
+    registered: true,
+    milestones: { delivered: Date.now() },
+  });
+  expect(stored?.autoTrackAt).toBeUndefined();
+  await t.action(internal.orderTracking.refreshStorefront, {});
+  expect(calls).toHaveBeenCalledTimes(2);
+});
+
+test("storefront backfill queues an existing eligible parcel only once", async () => {
+  vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
+  const domain = "8vvazz-uj.myshopify.com";
+  const t = backend();
+  const shop = await workspace(t, "storefront-backfill");
+  const { row } = await connect(t, shop, domain);
+  const imported = order();
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [imported],
+  });
+  const shipments = await t.run((ctx) => ctx.db.query("orderShipments").collect());
+  expect(shipments).toHaveLength(2);
+  await t.run((ctx) => ctx.db.patch("orderShipments", shipments[1]._id, { status: "Delivered" }));
+  const args = { domain, placedSince: imported.placedAt, cursor: null };
+  await expect(t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).rejects.toThrow(
+    "StorefrontTrackingDisabled",
+  );
+  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", domain);
+  expect(
+    await t.mutation(internal.orderTracking.queueStorefrontBackfill, {
+      ...args,
+      placedSince: imported.placedAt + 1,
+    }),
+  ).toMatchObject({ queued: 0 });
+  expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toMatchObject({
+    queued: 1,
+  });
+  expect(await t.mutation(internal.orderTracking.queueStorefrontBackfill, args)).toEqual({
+    queued: 0,
+    cursor: null,
+  });
+  expect(await t.run((ctx) => ctx.db.get("orderShipments", shipments[0]._id))).toMatchObject({
+    autoTrackAt: Date.now(),
+  });
+});
+
 describe("shipment updates", () => {
   test("shipment sync uses no tracking calls and a shop member can manually refresh a sixth parcel", async () => {
     const numbers = ["QA1", "QA2", "QA3", "QA4", "QA5", "QA6"];

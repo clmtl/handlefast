@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { z } from "zod";
 import { internal } from "./_generated/api";
-import { action, env, internalMutation } from "./_generated/server";
+import { action, env, internalAction, internalMutation } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
 import { shipmentFields, trackingUpdate } from "./lib/commerceModel";
 import { normalizeTracking, track17 } from "./lib/commerceProviders";
@@ -132,6 +132,9 @@ export const apply = internalMutation({
       await ctx.db.patch(row._id, {
         status: update.status,
         events: update.events,
+        milestones: update.milestones
+          ? { ...row.milestones, ...update.milestones }
+          : row.milestones,
         eventAt: update.eventAt,
         syncedAt: Date.now(),
         error: undefined,
@@ -146,5 +149,171 @@ export const apply = internalMutation({
         cursor: page.continueCursor,
       });
     return null;
+  },
+});
+
+export const queueStorefrontBackfill = internalMutation({
+  args: { domain: v.string(), placedSince: v.number(), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { domain, placedSince, cursor }) => {
+    if (domain !== env.STOREFRONT_TRACKING_AUTO_REGISTER || !env.TRACK17_API_KEY)
+      throw new ConvexError("StorefrontTrackingDisabled");
+    const connection = await ctx.db
+      .query("shopifyConnections")
+      .withIndex("by_domain", (q) => q.eq("domain", domain))
+      .unique();
+    const shop = connection && (await ctx.db.get("shops", connection.shopId));
+    if (connection?.status !== "active" || !shop || shop.status === "disabled")
+      throw new ConvexError("TrackingUnavailable");
+
+    const page = await ctx.db
+      .query("orderShipments")
+      .withIndex("by_connectionId_and_active_and_autoTrackAt", (q) =>
+        q.eq("connectionId", connection._id).eq("active", true).eq("autoTrackAt", undefined),
+      )
+      .paginate({ numItems: 40, cursor });
+    const now = Date.now();
+    let queued = 0;
+    for (const shipment of page.page) {
+      if (
+        shipment.generation !== connection.generation ||
+        ["Delivered", "Returned"].includes(shipment.status)
+      )
+        continue;
+      const order = await ctx.db.get("shopifyOrders", shipment.orderId);
+      if (
+        !order ||
+        order.connectionId !== connection._id ||
+        order.generation !== connection.generation ||
+        order.cancelled ||
+        order.placedAt < placedSince
+      )
+        continue;
+      await ctx.db.patch("orderShipments", shipment._id, { autoTrackAt: now });
+      queued++;
+    }
+    return { queued, cursor: page.isDone ? null : page.continueCursor };
+  },
+});
+
+export const claimStorefront = internalMutation({
+  args: { domain: v.string() },
+  handler: async (ctx, { domain }) => {
+    const connection = await ctx.db
+      .query("shopifyConnections")
+      .withIndex("by_domain", (q) => q.eq("domain", domain))
+      .unique();
+    if (connection?.status !== "active") return [];
+    const shop = await ctx.db.get("shops", connection.shopId);
+    if (!shop || shop.status === "disabled") return [];
+    const now = Date.now();
+    const shipments = await ctx.db
+      .query("orderShipments")
+      .withIndex("by_connectionId_and_active_and_autoTrackAt", (q) =>
+        q
+          .eq("connectionId", connection._id)
+          .eq("active", true)
+          .gt("autoTrackAt", undefined)
+          .lte("autoTrackAt", now),
+      )
+      .take(40);
+    for (const row of shipments) {
+      await ctx.db.patch("orderShipments", row._id, {
+        autoTrackAt: row.generation === connection.generation ? now + 15 * 60_000 : undefined,
+      });
+    }
+    return shipments.filter(
+      (row) => row.generation === connection.generation && (row.manualRefreshUntil ?? 0) <= now,
+    );
+  },
+});
+
+export const finishStorefront = internalMutation({
+  args: { shipmentId: v.id("orderShipments"), generation: v.string() },
+  handler: async (ctx, { shipmentId, generation }) => {
+    const row = await ctx.db.get("orderShipments", shipmentId);
+    if (!row?.active || row.generation !== generation) return;
+    await ctx.db.patch("orderShipments", shipmentId, {
+      autoTrackAt: ["Delivered", "Returned"].includes(row.status)
+        ? undefined
+        : Date.now() + (row.events.length ? 6 * 60 : 15) * 60_000,
+    });
+  },
+});
+
+export const refreshStorefront = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const domain = env.STOREFRONT_TRACKING_AUTO_REGISTER;
+    const key = env.TRACK17_API_KEY;
+    if (!domain || !key) return;
+    const rows = await ctx.runMutation(internal.orderTracking.claimStorefront, { domain });
+    if (!rows.length) return;
+
+    const unregistered = new Map(
+      rows.filter((row) => !row.registered).map((row) => [row.number, row]),
+    );
+    const accepted = new Map<string, number | undefined>();
+    if (unregistered.size) {
+      const result = await track17(
+        key,
+        "register",
+        [...unregistered.values()].map((row) => ({ number: row.number, tag: String(row._id) })),
+      );
+      for (const item of result.data?.accepted ?? []) {
+        const parsed = z
+          .object({ number: z.string(), carrier: z.number().int().positive() })
+          .safeParse(item);
+        if (parsed.success) accepted.set(parsed.data.number, parsed.data.carrier);
+      }
+      for (const item of result.data?.rejected ?? []) {
+        if (item.error.code === -18019901 && !accepted.has(item.number))
+          accepted.set(item.number, undefined);
+      }
+    }
+
+    const subscribed = rows.filter((row) => row.registered || accepted.has(row.number));
+    for (const row of subscribed) {
+      if (row.registered) continue;
+      await ctx.runMutation(internal.orderTracking.registered, {
+        shipmentId: row._id,
+        generation: row.generation,
+        carrier: accepted.get(row.number),
+      });
+    }
+    const requests = new Map(
+      subscribed.map((row) => {
+        const carrier = row.carrier ?? accepted.get(row.number);
+        return [
+          `${row.number}:${carrier ?? ""}`,
+          { number: row.number, ...(carrier ? { carrier } : {}) },
+        ];
+      }),
+    );
+    if (!requests.size) return;
+    const details = await track17(key, "gettrackinfo", [...requests.values()]);
+    for (const item of details.data?.accepted ?? []) {
+      const update = normalizeTracking(item);
+      const matches = subscribed.filter(
+        (row) =>
+          row.number === update.number &&
+          ((row.carrier ?? accepted.get(row.number)) === undefined ||
+            (row.carrier ?? accepted.get(row.number)) === update.carrier),
+      );
+      if (!matches.length) continue;
+      for (const row of matches) {
+        await ctx.runMutation(internal.orderTracking.registered, {
+          shipmentId: row._id,
+          generation: row.generation,
+          carrier: update.carrier,
+        });
+      }
+      await ctx.runMutation(internal.orderTracking.apply, { update, cursor: null });
+      for (const row of matches) {
+        await ctx.runMutation(internal.orderTracking.finishStorefront, {
+          shipmentId: row._id,
+          generation: row.generation,
+        });
+      }
+    }
   },
 });
