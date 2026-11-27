@@ -15,6 +15,7 @@ import {
 import { decrypt, encrypt } from "./lib/commerceSecrets";
 import { ensureDeliveryPromise } from "./lib/deliveryContext";
 import { configureSupportWebhooks } from "./lib/shopifyWebhooks";
+import { enabledTrackingDomains } from "./lib/storefrontTrackingShops";
 
 export async function accessToken(ctx: ActionCtx, row: Doc<"shopifyConnections">) {
   const context = `shopify:${row.shopId}`;
@@ -299,7 +300,9 @@ export async function persistOrder(
       orderId,
       registered: false,
       autoTrackAt:
-        env.STOREFRONT_TRACKING_AUTO_REGISTER === row.domain && !order.cancelled
+        enabledTrackingDomains(env.STOREFRONT_TRACKING_AUTO_REGISTER).some(
+          (domain) => domain === row.domain,
+        ) && !order.cancelled
           ? Date.now()
           : undefined,
       nextAttemptAt: Date.now(),

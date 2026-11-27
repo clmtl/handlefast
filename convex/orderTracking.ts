@@ -1,10 +1,11 @@
 import { ConvexError, v } from "convex/values";
 import { z } from "zod";
 import { internal } from "./_generated/api";
-import { action, env, internalAction, internalMutation } from "./_generated/server";
+import { type ActionCtx, action, env, internalAction, internalMutation } from "./_generated/server";
 import { requireShopMembership } from "./lib/authorization";
 import { shipmentFields, trackingUpdate } from "./lib/commerceModel";
 import { normalizeTracking, track17 } from "./lib/commerceProviders";
+import { enabledTrackingDomains } from "./lib/storefrontTrackingShops";
 
 export const claimManual = internalMutation({
   args: { shipmentId: v.id("orderShipments") },
@@ -155,7 +156,12 @@ export const apply = internalMutation({
 export const queueStorefrontBackfill = internalMutation({
   args: { domain: v.string(), placedSince: v.number(), cursor: v.union(v.string(), v.null()) },
   handler: async (ctx, { domain, placedSince, cursor }) => {
-    if (domain !== env.STOREFRONT_TRACKING_AUTO_REGISTER || !env.TRACK17_API_KEY)
+    if (
+      !enabledTrackingDomains(env.STOREFRONT_TRACKING_AUTO_REGISTER).some(
+        (enabled) => enabled === domain,
+      ) ||
+      !env.TRACK17_API_KEY
+    )
       throw new ConvexError("StorefrontTrackingDisabled");
     const connection = await ctx.db
       .query("shopifyConnections")
@@ -241,79 +247,87 @@ export const finishStorefront = internalMutation({
 });
 
 export const refreshStorefront = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    const domain = env.STOREFRONT_TRACKING_AUTO_REGISTER;
+  args: { domain: v.optional(v.string()) },
+  handler: async (ctx, { domain }) => {
     const key = env.TRACK17_API_KEY;
-    if (!domain || !key) return;
-    const rows = await ctx.runMutation(internal.orderTracking.claimStorefront, { domain });
-    if (!rows.length) return;
-
-    const unregistered = new Map(
-      rows.filter((row) => !row.registered).map((row) => [row.number, row]),
+    if (!key) return;
+    const domains = enabledTrackingDomains(env.STOREFRONT_TRACKING_AUTO_REGISTER);
+    await Promise.all(
+      domains
+        .filter((enabled) => !domain || domain === enabled)
+        .map((enabled) => refreshStorefrontShop(ctx, key, enabled)),
     );
-    const accepted = new Map<string, number | undefined>();
-    if (unregistered.size) {
-      const result = await track17(
-        key,
-        "register",
-        [...unregistered.values()].map((row) => ({ number: row.number, tag: String(row._id) })),
-      );
-      for (const item of result.data?.accepted ?? []) {
-        const parsed = z
-          .object({ number: z.string(), carrier: z.number().int().positive() })
-          .safeParse(item);
-        if (parsed.success) accepted.set(parsed.data.number, parsed.data.carrier);
-      }
-      for (const item of result.data?.rejected ?? []) {
-        if (item.error.code === -18019901 && !accepted.has(item.number))
-          accepted.set(item.number, undefined);
-      }
-    }
+  },
+});
 
-    const subscribed = rows.filter((row) => row.registered || accepted.has(row.number));
-    for (const row of subscribed) {
-      if (row.registered) continue;
+async function refreshStorefrontShop(ctx: ActionCtx, key: string, domain: string) {
+  const rows = await ctx.runMutation(internal.orderTracking.claimStorefront, { domain });
+  if (!rows.length) return;
+
+  const unregistered = new Map(
+    rows.filter((row) => !row.registered).map((row) => [row.number, row]),
+  );
+  const accepted = new Map<string, number | undefined>();
+  if (unregistered.size) {
+    const result = await track17(
+      key,
+      "register",
+      [...unregistered.values()].map((row) => ({ number: row.number, tag: String(row._id) })),
+    );
+    for (const item of result.data?.accepted ?? []) {
+      const parsed = z
+        .object({ number: z.string(), carrier: z.number().int().positive() })
+        .safeParse(item);
+      if (parsed.success) accepted.set(parsed.data.number, parsed.data.carrier);
+    }
+    for (const item of result.data?.rejected ?? []) {
+      if (item.error.code === -18019901 && !accepted.has(item.number))
+        accepted.set(item.number, undefined);
+    }
+  }
+
+  const subscribed = rows.filter((row) => row.registered || accepted.has(row.number));
+  for (const row of subscribed) {
+    if (row.registered) continue;
+    await ctx.runMutation(internal.orderTracking.registered, {
+      shipmentId: row._id,
+      generation: row.generation,
+      carrier: accepted.get(row.number),
+    });
+  }
+  const requests = new Map(
+    subscribed.map((row) => {
+      const carrier = row.carrier ?? accepted.get(row.number);
+      return [
+        `${row.number}:${carrier ?? ""}`,
+        { number: row.number, ...(carrier ? { carrier } : {}) },
+      ];
+    }),
+  );
+  if (!requests.size) return;
+  const details = await track17(key, "gettrackinfo", [...requests.values()]);
+  for (const item of details.data?.accepted ?? []) {
+    const update = normalizeTracking(item);
+    const matches = subscribed.filter(
+      (row) =>
+        row.number === update.number &&
+        ((row.carrier ?? accepted.get(row.number)) === undefined ||
+          (row.carrier ?? accepted.get(row.number)) === update.carrier),
+    );
+    if (!matches.length) continue;
+    for (const row of matches) {
       await ctx.runMutation(internal.orderTracking.registered, {
         shipmentId: row._id,
         generation: row.generation,
-        carrier: accepted.get(row.number),
+        carrier: update.carrier,
       });
     }
-    const requests = new Map(
-      subscribed.map((row) => {
-        const carrier = row.carrier ?? accepted.get(row.number);
-        return [
-          `${row.number}:${carrier ?? ""}`,
-          { number: row.number, ...(carrier ? { carrier } : {}) },
-        ];
-      }),
-    );
-    if (!requests.size) return;
-    const details = await track17(key, "gettrackinfo", [...requests.values()]);
-    for (const item of details.data?.accepted ?? []) {
-      const update = normalizeTracking(item);
-      const matches = subscribed.filter(
-        (row) =>
-          row.number === update.number &&
-          ((row.carrier ?? accepted.get(row.number)) === undefined ||
-            (row.carrier ?? accepted.get(row.number)) === update.carrier),
-      );
-      if (!matches.length) continue;
-      for (const row of matches) {
-        await ctx.runMutation(internal.orderTracking.registered, {
-          shipmentId: row._id,
-          generation: row.generation,
-          carrier: update.carrier,
-        });
-      }
-      await ctx.runMutation(internal.orderTracking.apply, { update, cursor: null });
-      for (const row of matches) {
-        await ctx.runMutation(internal.orderTracking.finishStorefront, {
-          shipmentId: row._id,
-          generation: row.generation,
-        });
-      }
+    await ctx.runMutation(internal.orderTracking.apply, { update, cursor: null });
+    for (const row of matches) {
+      await ctx.runMutation(internal.orderTracking.finishStorefront, {
+        shipmentId: row._id,
+        generation: row.generation,
+      });
     }
-  },
-});
+  }
+}

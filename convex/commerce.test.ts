@@ -453,6 +453,89 @@ test("storefront tracking verifies checkout email, scopes parcels, and renders l
   expect((await search({ mode: "tracking", number: "TRACK1234" })).status).toBe(429);
 });
 
+test("Mundo Joyero keeps searches in Spanish and isolated from the French storefront", async () => {
+  const t = backend();
+  const frenchDomain = "8vvazz-uj.myshopify.com";
+  const spanishDomain = "1k6cdz-v0.myshopify.com";
+  const frenchPath = "/storefront/tracking-pilot";
+  const spanishPath = "/storefront/tracking/mundo-joyero";
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", frenchDomain);
+  expect((await t.fetch(spanishPath)).status).toBe(404);
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", `${frenchDomain}, ${spanishDomain}`);
+  vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", `${frenchDomain}, ${spanishDomain}`);
+  const frenchShop = await workspace(t, "french-storefront");
+  const spanishShop = await workspace(t, "spanish-storefront");
+  const { row: france } = await connect(t, frenchShop, frenchDomain);
+  const { row: spain } = await connect(t, spanishShop, spanishDomain, "b".repeat(32));
+  const spanishOrder = {
+    ...order(),
+    destination: { city: "Madrid", country: "ES", zip: "28012" },
+    tracking: [{ number: "ESPARCEL123", company: "Carrier", fulfillmentId: "f1" }],
+  };
+
+  for (const [connection, value] of [
+    [france, order()],
+    [spain, spanishOrder],
+  ] as const) {
+    await t.mutation(internal.orderContext.saveLookup, {
+      connectionId: connection._id,
+      generation: connection.generation,
+      orders: [value],
+    });
+    const shipment = await t.run((ctx) =>
+      ctx.db
+        .query("orderShipments")
+        .withIndex("by_connectionId", (q) => q.eq("connectionId", connection._id))
+        .first(),
+    );
+    expect(shipment?.autoTrackAt).toBe(Date.now());
+  }
+
+  const municipality = { id: "28079", type: "Municipio", muni: "Madrid", provinceCode: "28" };
+  const geocode = vi.fn(async (url: URL) =>
+    Response.json(
+      url.pathname.endsWith("/find")
+        ? { ...municipality, lng: -3.696, lat: 40.466 }
+        : [municipality, { ...municipality, id: "99999", provinceCode: "99" }],
+    ),
+  );
+  vi.stubGlobal("fetch", geocode);
+  expect((await t.fetch(`${frenchPath}?nums=ESPARCEL123`)).status).toBe(404);
+  expect((await t.fetch(`${spanishPath}?nums=TRACK1234`)).status).toBe(404);
+  const direct = await t.fetch(`${spanishPath}?nums=ESPARCEL123`);
+  expect(direct.status).toBe(200);
+  const html = await direct.text();
+  expect(html).toContain('<html lang="es">');
+  expect(html).toContain("Seguimiento de pedidos");
+  expect(html).toContain("Con el repartidor local");
+  expect(html).toContain("Zona de entrega");
+  expect(html).toContain('action="/storefront/tracking/mundo-joyero?lang=es"');
+  expect(html).toContain("openstreetmap.org/export");
+  expect(html).not.toContain("28012");
+  expect(direct.headers.get("content-security-policy")).toContain("https://mundo-joyero.com");
+  expect(direct.headers.get("content-security-policy")).not.toContain("la-combi-bebe.fr");
+  expect(geocode.mock.calls.map(([url]) => url.search)).toEqual([
+    "?q=Madrid&limit=20",
+    "?id=28079&type=Municipio",
+  ]);
+
+  const lookup = await t.fetch(spanishPath, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      mode: "order",
+      number: "#1234",
+      email: spanishOrder.email,
+    }).toString(),
+  });
+  expect(lookup.status).toBe(200);
+  const orderHtml = await lookup.text();
+  expect(orderHtml).toContain("ESPARCEL123");
+  expect(orderHtml).not.toContain("TRACK1234");
+  expect(orderHtml).not.toContain(spanishOrder.email);
+  expect(geocode).toHaveBeenCalledTimes(2);
+});
+
 test("an imported shipment starts tracking before any support message", async () => {
   vi.stubEnv("STOREFRONT_TRACKING_AUTO_REGISTER", "8vvazz-uj.myshopify.com");
   vi.stubEnv("TRACK17_API_KEY", "test-tracking-secret");
