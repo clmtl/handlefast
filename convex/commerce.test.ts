@@ -110,6 +110,7 @@ async function email(
   w: Awaited<ReturnType<typeof workspace>>,
   subject = "Commande #1234",
   from = "customer@example.com",
+  senderName?: string,
 ) {
   const route = await w.client.query(api.inboundEmailRoutes.getForShop, { shopId: w.shopId });
   if (!route) throw new Error("Missing route");
@@ -138,7 +139,7 @@ async function email(
     deliveryKey: `${subject}:${from}`,
     envelopeFrom: from,
     envelopeTo: route.address,
-    from: { address: from },
+    from: { address: from, name: senderName },
     to: [{ address: route.address }],
     cc: [],
     replyTo: [],
@@ -226,14 +227,14 @@ describe("shopify connection and tenant isolation", () => {
   });
 });
 describe("support order context", () => {
-  test("requires email plus order reference for automatic association, supports multiple parcels and manual suppression", async () => {
+  test("links by a unique reference even with a different sender, and respects manual suppression", async () => {
     const t = backend(),
       w = await workspace(t, "matching"),
       { row } = await connect(t, w);
     const [stored] = await t.mutation(internal.orderContext.saveLookup, {
       connectionId: row._id,
       generation: row.generation,
-      orders: [order()],
+      orders: [{ ...order(), recipientName: "elodie dupont" }],
     });
     const receiptId = await email(t, w);
     const context = await w.client.query(api.orderContext.forEmail, { receiptId });
@@ -242,11 +243,33 @@ describe("support order context", () => {
     expect(context?.shipments).toHaveLength(2);
     const wrongSender = await email(t, w, "Commande #1234", "someone@example.com");
     expect(
-      (await w.client.query(api.orderContext.forEmail, { receiptId: wrongSender }))?.selected,
-    ).toBeNull();
+      await w.client.query(api.orderContext.forEmail, { receiptId: wrongSender }),
+    ).toMatchObject({
+      selected: { _id: stored._id },
+      matchedBy: "reference",
+      identityMatches: false,
+    });
     const noNumber = await email(t, w, "Où est mon colis ?");
+    expect(await w.client.query(api.orderContext.forEmail, { receiptId: noNumber })).toMatchObject({
+      selected: { _id: stored._id },
+      matchedBy: "email",
+      identityMatches: true,
+    });
+    const nameOnly = await email(
+      t,
+      w,
+      "Où est mon colis ?",
+      "someone@example.com",
+      "Élodie Dupont",
+    );
+    expect(await w.client.query(api.orderContext.forEmail, { receiptId: nameOnly })).toMatchObject({
+      selected: { _id: stored._id },
+      matchedBy: "name",
+      identityMatches: false,
+    });
+    const ambiguous = await email(t, w, "Commandes #1234 et #5678", "someone@example.com");
     expect(
-      (await w.client.query(api.orderContext.forEmail, { receiptId: noNumber }))?.selected,
+      (await w.client.query(api.orderContext.forEmail, { receiptId: ambiguous }))?.selected,
     ).toBeNull();
     await w.client.mutation(api.orderContext.link, { receiptId, orderId: null });
     expect((await w.client.query(api.orderContext.forEmail, { receiptId }))?.selected).toBeNull();

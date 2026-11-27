@@ -3,6 +3,7 @@ import { Check, Reply, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { signSupportReply } from "../../convex/lib/automaticReplyPolicy";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -48,10 +49,15 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
         {notice}
       </p>
     ) : null;
-  const { review, canManage, sendTarget, draftLanguageMatches } = value;
+  const { review, canManage, sendTarget, draftLanguageMatches, suggestedDraft, signatureName } =
+    value;
   const resolved = review.status === "resolved";
   const draft =
-    text ?? review.editedDraft ?? (draftLanguageMatches ? review.proposal?.draftReply : "") ?? "";
+    text ??
+    review.editedDraft ??
+    suggestedDraft ??
+    (draftLanguageMatches ? review.proposal?.draftReply : "") ??
+    "";
 
   return (
     <section aria-label="Actions sur la conversation" className="rounded-xl border bg-card p-4">
@@ -103,8 +109,13 @@ export function HumanReviewPanel({ receiptId }: { receiptId: Id<"emailReceipts">
               <Button
                 disabled={busy || !draft.trim()}
                 onClick={() => {
+                  const signed = signSupportReply(draft, signatureName);
+                  if (signed.length > 6000) {
+                    setError("Raccourcis ta réponse pour laisser la place à la signature.");
+                    return;
+                  }
                   setError("");
-                  setApproval({ ...sendTarget, text: draft.trim() });
+                  setApproval({ ...sendTarget, text: signed });
                 }}
               >
                 Vérifier l’envoi
