@@ -4,6 +4,8 @@ import { internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
 import { shopifyWebhook, trackingWebhook } from "./commerceHttp";
+import { equalSignature, sha256 } from "./lib/commerceSecrets";
+import { trackingPage, trackingResult } from "./lib/storefrontTrackingPage";
 import { verifyWebhookSignature } from "./lib/webhookSignatures";
 import { takeoutMessage } from "./takeoutHttp";
 
@@ -14,6 +16,48 @@ authComponent.registerRoutes(http, createAuth);
 http.route({ path: "/takeout/message", method: "POST", handler: takeoutMessage });
 http.route({ path: "/webhooks/shopify", method: "POST", handler: shopifyWebhook });
 http.route({ path: "/webhooks/17track", method: "POST", handler: trackingWebhook });
+
+const storefrontTrackingPath = "/storefront/tracking-pilot";
+http.route({
+  path: storefrontTrackingPath,
+  method: "GET",
+  handler: httpAction(async () =>
+    env.STOREFRONT_TRACKING_PILOT ? trackingPage() : new Response(null, { status: 404 }),
+  ),
+});
+http.route({
+  path: storefrontTrackingPath,
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const config = env.STOREFRONT_TRACKING_PILOT;
+    if (!config) return new Response(null, { status: 404 });
+    if (req.headers.get("content-type")?.split(";")[0] !== "application/x-www-form-urlencoded")
+      return new Response(null, { status: 415 });
+
+    const body = await readWebhookBody(req);
+    if (body === null) return new Response(null, { status: 413 });
+    const form = new URLSearchParams(body);
+    const code = form.get("code")?.trim() ?? "";
+    const [digest, ...pilotNumbers] = config.split(":");
+    if (!code || code.length > 128 || !equalSignature(await sha256(code), digest))
+      return trackingPage('<p class="message" role="alert">Code d’accès incorrect.</p>', 403);
+
+    const number = form.get("tracking")?.trim().toUpperCase() ?? "";
+    if (!/^[A-Z0-9-]{6,64}$/.test(number))
+      return trackingPage('<p class="message" role="alert">Vérifie le numéro de suivi.</p>', 400);
+
+    const shipment = pilotNumbers.includes(number)
+      ? await ctx.runQuery(internal.storefrontTracking.lookup, { number })
+      : null;
+    return shipment
+      ? trackingPage(trackingResult(shipment), 200, number)
+      : trackingPage(
+          '<p class="message" role="alert">Aucun suivi disponible pour ce numéro.</p>',
+          404,
+          number,
+        );
+  }),
+});
 
 http.route({
   path: "/webhooks/cloudflare/email-routing",

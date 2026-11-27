@@ -334,6 +334,65 @@ describe("support order context", () => {
     );
   });
 });
+test("storefront pilot restricts access to selected parcels from La Combi Bébé", async () => {
+  const t = backend();
+  const path = "/storefront/tracking-pilot";
+  const code = "test-access-code";
+  const search = (tracking: string, accessCode = code) =>
+    t.fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ tracking, code: accessCode }).toString(),
+    });
+
+  expect((await t.fetch(path)).status).toBe(404);
+  vi.stubEnv("STOREFRONT_TRACKING_PILOT", `${await sha256(code)}:TRACK1234:TRACK5678`);
+  expect((await search("TRACK1234", "incorrect")).status).toBe(403);
+
+  const pilot = await workspace(t, "tracking-pilot");
+  const other = await workspace(t, "other-tracking-shop");
+  const { row } = await connect(t, pilot, "8vvazz-uj.myshopify.com");
+  const { row: otherRow } = await connect(t, other, "other.myshopify.com", "b".repeat(32));
+  const [pilotOrder, otherOrder] = [order(), order()];
+  pilotOrder.tracking = pilotOrder.tracking.slice(0, 1);
+  otherOrder.tracking = otherOrder.tracking.slice(1);
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: row._id,
+    generation: row.generation,
+    orders: [pilotOrder],
+  });
+  await t.mutation(internal.orderContext.saveLookup, {
+    connectionId: otherRow._id,
+    generation: otherRow.generation,
+    orders: [otherOrder],
+  });
+  await t.run(async (ctx) => {
+    const shipment = await ctx.db
+      .query("orderShipments")
+      .withIndex("by_connectionId_and_number", (q) =>
+        q.eq("connectionId", row._id).eq("number", "TRACK1234"),
+      )
+      .unique();
+    if (!shipment) throw new Error("Missing pilot parcel");
+    await ctx.db.patch("orderShipments", shipment._id, {
+      status: "Delivered",
+      events: [
+        { time: Date.now(), description: "<script>Livraison</script>", location: "Private" },
+      ],
+    });
+  });
+  expect((await search("TRACK5678")).status).toBe(404);
+  expect((await search("OTHER1234")).status).toBe(404);
+  const response = await search("track1234");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  const html = await response.text();
+  expect(html).toContain("Livré");
+  expect(html).toContain("&lt;script&gt;Livraison&lt;/script&gt;");
+  expect(html).not.toContain("Private");
+  expect(html).not.toContain(pilotOrder.email);
+});
+
 describe("shipment updates", () => {
   test("shipment sync uses no tracking calls and a shop member can manually refresh a sixth parcel", async () => {
     const numbers = ["QA1", "QA2", "QA3", "QA4", "QA5", "QA6"];
